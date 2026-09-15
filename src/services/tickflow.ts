@@ -44,13 +44,14 @@ interface ExchangeInstruments {
 function toStock(item: ExchangeInstruments['data'][number]): Stock {
   return {
     code: item.code,
-    name: item.name,
+    // 名称里的空格是数据源对齐填充的（如"万 科A"），清洗掉
+    name: item.name.replace(/\s+/g, ''),
     exchange: item.exchange,
   };
 }
 
 // ponytail: 全量列表缓存在 localStorage，1 小时过期，避免每次启动拉 5000+ 条
-const STOCKS_CACHE_KEY = 'vc_stocks_cache';
+const STOCKS_CACHE_KEY = 'vc_stocks_cache_v2'; // v2: 名称已清洗空格
 const STOCKS_CACHE_TTL = 60 * 60 * 1000;
 
 export async function fetchStockList(): Promise<Stock[]> {

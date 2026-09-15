@@ -10,9 +10,14 @@ export interface SinaFinance {
 
 const GBK = new TextDecoder('gbk');
 
+// Tauri 环境用 plugin-http 绕 CORS（打包版无 Vite 代理），浏览器走 /sina 代理
+const isTauri = '__TAURI_INTERNALS__' in window;
+
 async function fetchPage(stock: Stock, page: string, year: number): Promise<string> {
   const path = `/corp/go.php/${page}/stockid/${stock.code}/ctrl/${year}/displaytype/4.phtml`;
-  const res = await fetch(`/sina${path}`);
+  const res = isTauri
+    ? await (await import('@tauri-apps/plugin-http')).fetch(`https://money.finance.sina.com.cn${path}`)
+    : await fetch(`/sina${path}`);
   if (!res.ok) throw new Error(`新浪接口 ${res.status}`);
   return GBK.decode(await res.arrayBuffer());
 }
