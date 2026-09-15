@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createChart,
   IChartApi,
@@ -11,7 +11,7 @@ import {
   LineSeries,
 } from 'lightweight-charts';
 import { KlineData } from '../types';
-import { IndicatorType, calculateMACD, calculateKDJ, calculateRSI, MACDData, KDJData, RSIData } from '../utils/indicators';
+import { IndicatorType, calculateMACD, calculateKDJ, calculateRSI } from '../utils/indicators';
 
 interface KlineChartProps {
   data: KlineData[];
@@ -27,180 +27,89 @@ interface TooltipData {
   close: number;
   volume: number;
   date: string;
-  indicatorValues?: Record<string, number | undefined>;
+  indicatorValues?: Array<[string, number]>;
 }
 
-export function KlineChart({ data, height = 400, period: _period, indicators = [] }: KlineChartProps) {
+// 指标副图定义：一组线/柱系列 + 计算函数，统一创建、销毁与取值
+interface IndicatorSeriesDef {
+  key: string;
+  kind: 'line' | 'hist';
+  label: string;
+  color?: string;
+  lineStyle?: number;
+  lastValueVisible?: boolean;
+}
+
+interface IndicatorDef {
+  priceScaleId: string;
+  series: IndicatorSeriesDef[];
+  // 返回每根 K 线对应各 key 的值（undefined 表示该点无值）
+  compute: (data: KlineData[]) => Record<string, Array<number | undefined>>;
+}
+
+const INDICATOR_DEFS: Record<IndicatorType, IndicatorDef> = {
+  macd: {
+    priceScaleId: 'macd',
+    series: [
+      { key: 'dif', kind: 'line', label: 'DIF', color: '#60a5fa' },
+      { key: 'dea', kind: 'line', label: 'DEA', color: '#fbbf24' },
+      { key: 'macd', kind: 'hist', label: 'MACD' },
+    ],
+    compute: (data) => {
+      const macd = calculateMACD(data);
+      return {
+        dif: macd.map((d) => (Number.isNaN(d.dif) ? undefined : d.dif)),
+        dea: macd.map((d) => (Number.isNaN(d.dea) ? undefined : d.dea)),
+        macd: macd.map((d) => (Number.isNaN(d.macd) ? undefined : d.macd)),
+      };
+    },
+  },
+  kdj: {
+    priceScaleId: 'kdj',
+    series: [
+      { key: 'k', kind: 'line', label: 'K', color: '#60a5fa' },
+      { key: 'd', kind: 'line', label: 'D', color: '#fbbf24' },
+      { key: 'j', kind: 'line', label: 'J', color: '#c084fc' },
+    ],
+    compute: (data) => {
+      const kdj = calculateKDJ(data);
+      return {
+        k: kdj.map((d) => (Number.isNaN(d.k) ? undefined : d.k)),
+        d: kdj.map((d) => (Number.isNaN(d.d) ? undefined : d.d)),
+        j: kdj.map((d) => (Number.isNaN(d.j) ? undefined : d.j)),
+      };
+    },
+  },
+  rsi: {
+    priceScaleId: 'rsi',
+    series: [
+      { key: 'value', kind: 'line', label: 'RSI', color: '#60a5fa' },
+      { key: 'upper', kind: 'line', label: '80', color: '#f87171', lineStyle: 2, lastValueVisible: false },
+      { key: 'lower', kind: 'line', label: '20', color: '#34d399', lineStyle: 2, lastValueVisible: false },
+    ],
+    compute: (data) => {
+      const rsi = calculateRSI(data);
+      return {
+        value: rsi.map((d) => (Number.isNaN(d.value) ? undefined : d.value)),
+        upper: data.map(() => 80),
+        lower: data.map(() => 20),
+      };
+    },
+  },
+};
+
+export function KlineChart({ data, height = 400, period = 'daily', indicators = [] }: KlineChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-
-  // Indicator series refs
-  const macdDifRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const macdDeaRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const macdHistRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const kdjKRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const kdjDRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const kdjJRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const rsiRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const rsiUpperRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const rsiLowerRef = useRef<ISeriesApi<'Line'> | null>(null);
+  // 当前活跃副图指标: 指标类型 -> 已创建的 series + tooltip 标签
+  const indicatorSeriesRef = useRef<Map<IndicatorType, Array<{ api: ISeriesApi<'Line' | 'Histogram'>; label: string }>>>(new Map());
+  // tickMarkFormatter 闭包读最新周期（chart 只创建一次）
+  const periodRef = useRef(period);
+  periodRef.current = period;
 
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-
-  // Track active indicators to handle cleanup
-  const activeIndicatorsRef = useRef<Set<IndicatorType>>(new Set());
-
-  const removeIndicator = useCallback((chart: IChartApi, indicator: IndicatorType) => {
-    switch (indicator) {
-      case 'macd':
-        if (macdDifRef.current) { chart.removeSeries(macdDifRef.current); macdDifRef.current = null; }
-        if (macdDeaRef.current) { chart.removeSeries(macdDeaRef.current); macdDeaRef.current = null; }
-        if (macdHistRef.current) { chart.removeSeries(macdHistRef.current); macdHistRef.current = null; }
-        break;
-      case 'kdj':
-        if (kdjKRef.current) { chart.removeSeries(kdjKRef.current); kdjKRef.current = null; }
-        if (kdjDRef.current) { chart.removeSeries(kdjDRef.current); kdjDRef.current = null; }
-        if (kdjJRef.current) { chart.removeSeries(kdjJRef.current); kdjJRef.current = null; }
-        break;
-      case 'rsi':
-        if (rsiRef.current) { chart.removeSeries(rsiRef.current); rsiRef.current = null; }
-        if (rsiUpperRef.current) { chart.removeSeries(rsiUpperRef.current); rsiUpperRef.current = null; }
-        if (rsiLowerRef.current) { chart.removeSeries(rsiLowerRef.current); rsiLowerRef.current = null; }
-        break;
-    }
-    activeIndicatorsRef.current.delete(indicator);
-  }, []);
-
-  const addMACD = useCallback((chart: IChartApi, macdData: MACDData[]) => {
-    const difSeries = chart.addSeries(LineSeries, {
-      color: '#60a5fa',
-      lineWidth: 1,
-      title: 'DIF',
-      priceScaleId: 'macd',
-    });
-    const deaSeries = chart.addSeries(LineSeries, {
-      color: '#fbbf24',
-      lineWidth: 1,
-      title: 'DEA',
-      priceScaleId: 'macd',
-    });
-    const histSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: 'macd',
-    });
-
-    difSeries.priceScale().applyOptions({ scaleMargins: { top: 0.7, bottom: 0.05 } });
-
-    const difData: LineData[] = [];
-    const deaData: LineData[] = [];
-    const histData: HistogramData[] = [];
-
-    for (const d of macdData) {
-      if (!Number.isNaN(d.dif)) difData.push({ time: d.time, value: d.dif });
-      if (!Number.isNaN(d.dea)) deaData.push({ time: d.time, value: d.dea });
-      if (!Number.isNaN(d.macd)) {
-        histData.push({ time: d.time, value: d.macd, color: d.macd >= 0 ? '#f87171' : '#34d399' });
-      }
-    }
-
-    difSeries.setData(difData);
-    deaSeries.setData(deaData);
-    histSeries.setData(histData);
-
-    macdDifRef.current = difSeries;
-    macdDeaRef.current = deaSeries;
-    macdHistRef.current = histSeries;
-    activeIndicatorsRef.current.add('macd');
-  }, []);
-
-  const addKDJ = useCallback((chart: IChartApi, kdjData: KDJData[]) => {
-    const kSeries = chart.addSeries(LineSeries, {
-      color: '#60a5fa',
-      lineWidth: 1,
-      title: 'K',
-      priceScaleId: 'kdj',
-    });
-    const dSeries = chart.addSeries(LineSeries, {
-      color: '#fbbf24',
-      lineWidth: 1,
-      title: 'D',
-      priceScaleId: 'kdj',
-    });
-    const jSeries = chart.addSeries(LineSeries, {
-      color: '#c084fc',
-      lineWidth: 1,
-      title: 'J',
-      priceScaleId: 'kdj',
-    });
-
-    kSeries.priceScale().applyOptions({ scaleMargins: { top: 0.7, bottom: 0.05 } });
-
-    const kData: LineData[] = [];
-    const dData: LineData[] = [];
-    const jData: LineData[] = [];
-
-    for (const item of kdjData) {
-      if (!Number.isNaN(item.k)) kData.push({ time: item.time, value: item.k });
-      if (!Number.isNaN(item.d)) dData.push({ time: item.time, value: item.d });
-      if (!Number.isNaN(item.j)) jData.push({ time: item.time, value: item.j });
-    }
-
-    kSeries.setData(kData);
-    dSeries.setData(dData);
-    jSeries.setData(jData);
-
-    kdjKRef.current = kSeries;
-    kdjDRef.current = dSeries;
-    kdjJRef.current = jSeries;
-    activeIndicatorsRef.current.add('kdj');
-  }, []);
-
-  const addRSI = useCallback((chart: IChartApi, rsiData: RSIData[]) => {
-    const rsiSeries = chart.addSeries(LineSeries, {
-      color: '#60a5fa',
-      lineWidth: 1,
-      title: 'RSI',
-      priceScaleId: 'rsi',
-    });
-    const upperSeries = chart.addSeries(LineSeries, {
-      color: '#f87171',
-      lineWidth: 1,
-      lineStyle: 2,
-      title: '80',
-      priceScaleId: 'rsi',
-      lastValueVisible: false,
-    });
-    const lowerSeries = chart.addSeries(LineSeries, {
-      color: '#34d399',
-      lineWidth: 1,
-      lineStyle: 2,
-      title: '20',
-      priceScaleId: 'rsi',
-      lastValueVisible: false,
-    });
-
-    rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.7, bottom: 0.05 } });
-
-    const lineData: LineData[] = [];
-    const upperData: LineData[] = [];
-    const lowerData: LineData[] = [];
-
-    for (const d of rsiData) {
-      if (!Number.isNaN(d.value)) lineData.push({ time: d.time, value: d.value });
-      upperData.push({ time: d.time, value: 80 });
-      lowerData.push({ time: d.time, value: 20 });
-    }
-
-    rsiSeries.setData(lineData);
-    upperSeries.setData(upperData);
-    lowerSeries.setData(lowerData);
-
-    rsiRef.current = rsiSeries;
-    rsiUpperRef.current = upperSeries;
-    rsiLowerRef.current = lowerSeries;
-    activeIndicatorsRef.current.add('rsi');
-  }, []);
 
   // Initialize chart
   useEffect(() => {
@@ -217,48 +126,33 @@ export function KlineChart({ data, height = 400, period: _period, indicators = [
       },
       crosshair: {
         mode: 1,
-        vertLine: {
-          color: '#64748b',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#3b82f6',
-        },
-        horzLine: {
-          color: '#64748b',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#3b82f6',
+        vertLine: { color: '#64748b', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
+        horzLine: { color: '#64748b', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
+      },
+      localization: {
+        // crosshair 悬浮的日期 label，格式 YY/MM/DD
+        timeFormatter: (time: string | number) => {
+          const dateStr = typeof time === 'string'
+            ? time
+            : new Date(time * 1000).toISOString().split('T')[0];
+          const [y, m, d] = dateStr.split('-');
+          return `${y.slice(2)}/${m}/${d}`;
         },
       },
       rightPriceScale: {
         borderColor: '#334155',
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
-        },
+        scaleMargins: { top: 0.1, bottom: 0.2 },
       },
       timeScale: {
         borderColor: '#334155',
         timeVisible: false,
         tickMarkFormatter: (time: string | number) => {
-          let dateStr: string;
-          if (typeof time === 'string') {
-            dateStr = time;
-          } else {
-            const date = new Date(time * 1000);
-            dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-          }
-          const parts = dateStr.split('-');
-          if (parts.length !== 3) return dateStr;
-          const [year, month, day] = parts;
-          // 根据周期调整刻度格式
-          if (_period === 'monthly') {
-            return `${year}/${month}`;
-          }
-          if (_period === 'weekly') {
-            return `${month}/${day}`;
-          }
-          return `${month}/${day}`;
+          const dateStr = typeof time === 'string'
+            ? time
+            : new Date(time * 1000).toISOString().split('T')[0];
+          const [y, m, d] = dateStr.split('-');
+          // 月K带年份，其余只显示月-日
+          return periodRef.current === 'monthly' ? `${y}/${m}` : `${m}/${d}`;
         },
       },
       autoSize: true,
@@ -280,10 +174,8 @@ export function KlineChart({ data, height = 400, period: _period, indicators = [
       priceFormat: { type: 'volume' },
       priceScaleId: '',
     });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     volumeSeriesRef.current = volumeSeries;
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.point || !param.time || !candlestickSeries) {
@@ -292,56 +184,32 @@ export function KlineChart({ data, height = 400, period: _period, indicators = [
       }
 
       const dataPoint = param.seriesData.get(candlestickSeries) as CandlestickData;
+      if (!dataPoint) return;
       const volumeData = param.seriesData.get(volumeSeries) as HistogramData;
 
-      if (dataPoint) {
-        const indicatorValues: Record<string, number | undefined> = {};
-
-        if (macdDifRef.current) {
-          const v = param.seriesData.get(macdDifRef.current) as LineData | undefined;
-          indicatorValues['DIF'] = v?.value;
+      const indicatorValues: Array<[string, number]> = [];
+      for (const seriesList of indicatorSeriesRef.current.values()) {
+        for (const { api, label } of seriesList) {
+          const v = param.seriesData.get(api) as LineData | undefined;
+          if (v) indicatorValues.push([label, v.value]);
         }
-        if (macdDeaRef.current) {
-          const v = param.seriesData.get(macdDeaRef.current) as LineData | undefined;
-          indicatorValues['DEA'] = v?.value;
-        }
-        if (macdHistRef.current) {
-          const v = param.seriesData.get(macdHistRef.current) as HistogramData | undefined;
-          indicatorValues['MACD'] = v?.value;
-        }
-        if (kdjKRef.current) {
-          const v = param.seriesData.get(kdjKRef.current) as LineData | undefined;
-          indicatorValues['K'] = v?.value;
-        }
-        if (kdjDRef.current) {
-          const v = param.seriesData.get(kdjDRef.current) as LineData | undefined;
-          indicatorValues['D'] = v?.value;
-        }
-        if (kdjJRef.current) {
-          const v = param.seriesData.get(kdjJRef.current) as LineData | undefined;
-          indicatorValues['J'] = v?.value;
-        }
-        if (rsiRef.current) {
-          const v = param.seriesData.get(rsiRef.current) as LineData | undefined;
-          indicatorValues['RSI'] = v?.value;
-        }
-
-        setTooltip({
-          open: dataPoint.open,
-          high: dataPoint.high,
-          low: dataPoint.low,
-          close: dataPoint.close,
-          volume: volumeData?.value || 0,
-          date: String(param.time),
-          indicatorValues: Object.keys(indicatorValues).length > 0 ? indicatorValues : undefined,
-        });
       }
+
+      setTooltip({
+        open: dataPoint.open,
+        high: dataPoint.high,
+        low: dataPoint.low,
+        close: dataPoint.close,
+        volume: volumeData?.value || 0,
+        date: String(param.time),
+        indicatorValues: indicatorValues.length > 0 ? indicatorValues : undefined,
+      });
     });
 
     return () => {
       chart.remove();
       chartRef.current = null;
-      activeIndicatorsRef.current.clear();
+      indicatorSeriesRef.current.clear();
     };
   }, []);
 
@@ -349,64 +217,71 @@ export function KlineChart({ data, height = 400, period: _period, indicators = [
   useEffect(() => {
     if (!candlestickSeriesRef.current || !volumeSeriesRef.current || data.length === 0) return;
 
-    const candleData: CandlestickData[] = data.map((item) => ({
-      time: item.date,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-    }));
-
-    const volumeData: HistogramData[] = data.map((item) => ({
-      time: item.date,
-      value: item.volume,
-      color: item.close >= item.open ? '#f87171' : '#34d399',
-    }));
-
-    candlestickSeriesRef.current.setData(candleData);
-    volumeSeriesRef.current.setData(volumeData);
+    candlestickSeriesRef.current.setData(
+      data.map((item) => ({
+        time: item.date,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      }))
+    );
+    volumeSeriesRef.current.setData(
+      data.map((item) => ({
+        time: item.date,
+        value: item.volume,
+        color: item.close >= item.open ? '#f87171' : '#34d399',
+      }))
+    );
     chartRef.current?.timeScale().fitContent();
   }, [data]);
 
-  // Update indicators
+  // Sync indicator series with props
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || data.length === 0) return;
 
-    const currentActive = activeIndicatorsRef.current;
+    const active = indicatorSeriesRef.current;
 
-    // Remove indicators no longer requested
-    for (const ind of currentActive) {
-      if (!indicators.includes(ind)) {
-        removeIndicator(chart, ind);
+    // 移除不再请求的指标
+    for (const type of [...active.keys()]) {
+      if (!indicators.includes(type)) {
+        for (const { api } of active.get(type)!) chart.removeSeries(api);
+        active.delete(type);
       }
     }
 
-    // Add new indicators
-    for (const ind of indicators) {
-      if (currentActive.has(ind)) continue;
+    // 创建新请求的指标并填数
+    for (const type of indicators) {
+      if (active.has(type)) continue;
+      const def = INDICATOR_DEFS[type];
+      const values = def.compute(data);
+      const times = data.map((d) => d.date);
 
-      switch (ind) {
-        case 'macd': {
-          const macdData = calculateMACD(data);
-          if (macdData.length > 0) addMACD(chart, macdData);
-          break;
-        }
-        case 'kdj': {
-          const kdjData = calculateKDJ(data);
-          if (kdjData.length > 0) addKDJ(chart, kdjData);
-          break;
-        }
-        case 'rsi': {
-          const rsiData = calculateRSI(data);
-          if (rsiData.length > 0) addRSI(chart, rsiData);
-          break;
-        }
-      }
+      const created = def.series.map((s) => {
+        const api =
+          s.kind === 'line'
+            ? chart.addSeries(LineSeries, {
+                color: s.color,
+                lineWidth: 1,
+                title: s.label,
+                priceScaleId: def.priceScaleId,
+                lineStyle: s.lineStyle,
+                lastValueVisible: s.lastValueVisible,
+              })
+            : chart.addSeries(HistogramSeries, { priceScaleId: def.priceScaleId });
+        api.setData(
+          times.map((time, i) => ({ time, value: values[s.key][i] })).filter((d) => d.value !== undefined) as never
+        );
+        return { api, label: s.label };
+      });
+
+      chart.priceScale(def.priceScaleId).applyOptions({ scaleMargins: { top: 0.7, bottom: 0.05 } });
+      active.set(type, created);
     }
 
     chart.timeScale().fitContent();
-  }, [data, indicators, addMACD, addKDJ, addRSI, removeIndicator]);
+  }, [data, indicators]);
 
   return (
     <div className="kline-chart-wrapper" style={{ position: 'relative' }}>
@@ -430,16 +305,14 @@ export function KlineChart({ data, height = 400, period: _period, indicators = [
             <span className="kline-tooltip-label">量:</span>
             <span className="kline-tooltip-value">{(tooltip.volume / 10000).toFixed(2)}万</span>
           </div>
-          {tooltip.indicatorValues && Object.keys(tooltip.indicatorValues).length > 0 && (
+          {tooltip.indicatorValues && (
             <div className="kline-tooltip-indicators">
-              {Object.entries(tooltip.indicatorValues).map(([key, value]) =>
-                value !== undefined ? (
-                  <div key={key} className="kline-tooltip-grid">
-                    <span className="kline-tooltip-label">{key}:</span>
-                    <span className="kline-tooltip-value">{value.toFixed(3)}</span>
-                  </div>
-                ) : null
-              )}
+              {tooltip.indicatorValues.map(([label, value]) => (
+                <div key={label} className="kline-tooltip-grid">
+                  <span className="kline-tooltip-label">{label}:</span>
+                  <span className="kline-tooltip-value">{value.toFixed(3)}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>

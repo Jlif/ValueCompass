@@ -37,23 +37,6 @@ function calculateEMA(values: number[], period: number): number[] {
   return ema;
 }
 
-// SMA 计算
-export function calculateSMA(values: number[], period: number): number[] {
-  const sma: number[] = [];
-  for (let i = 0; i < values.length; i++) {
-    if (i < period - 1) {
-      sma.push(NaN);
-      continue;
-    }
-    let sum = 0;
-    for (let j = 0; j < period; j++) {
-      sum += values[i - j];
-    }
-    sma.push(sum / period);
-  }
-  return sma;
-}
-
 // MACD: DIF = EMA(12) - EMA(26), DEA = EMA(DIF, 9), MACD = 2*(DIF-DEA)
 export function calculateMACD(data: KlineData[]): MACDData[] {
   if (data.length < 26) return [];

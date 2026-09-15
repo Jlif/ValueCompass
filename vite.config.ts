@@ -17,6 +17,14 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // 新浪财务数据代理（解决浏览器 CORS；新浪无跨域头）
+    proxy: {
+      "/sina": {
+        target: "https://money.finance.sina.com.cn",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/sina/, ""),
+      },
+    },
     hmr: host
       ? {
           protocol: "ws",
