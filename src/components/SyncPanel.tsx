@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clearSyncConfig, createGist, loadSyncConfig, saveSyncConfig } from '../services/gist';
 import type { SyncState } from '../hooks/useWatchlist';
 
@@ -24,6 +24,17 @@ export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush 
   const [token, setToken] = useState('');
   const [gistId, setGistId] = useState(() => loadSyncConfig()?.gistId || '');
   const [setupError, setSetupError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // 点击面板外任意位置关闭
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
 
   const handleCreate = async () => {
     setSetupError(null);
@@ -56,7 +67,7 @@ export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush 
   };
 
   return (
-    <div className="sync-wrap">
+    <div className="sync-wrap" ref={wrapRef}>
       <button className="btn-small" onClick={() => setOpen(!open)}>
         ☁ 云同步: {STATE_LABEL[syncState]}
       </button>
