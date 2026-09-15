@@ -1,8 +1,10 @@
 import { useMemo, useState, useEffect } from 'react';
 import { KlineChart } from './components/KlineChart';
 import { StockF10 } from './components/StockF10';
+import { SyncPanel } from './components/SyncPanel';
+import { IndustrySelect } from './components/IndustrySelect';
 import { useWatchlist } from './hooks/useWatchlist';
-import { fetchKline, fetchStockList, clearStockListCache, KlinePeriod } from './services/tickflow';
+import { fetchIndustryMap, fetchKline, fetchStockList, clearStockListCache, KlinePeriod, IndustryInfo } from './services/tickflow';
 import type { Stock, KlineData } from './types';
 import './App.css';
 
@@ -27,12 +29,20 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<Period>('daily');
   const [activeTab, setActiveTab] = useState<Tab>('all');
+  const [industryMap, setIndustryMap] = useState<Record<string, IndustryInfo>>({});
+  const [industryFilter, setIndustryFilter] = useState('');
+  const [hideST, setHideST] = useState(true);
 
   const {
     watchlist,
     addToWatchlist,
     removeFromWatchlist,
     isInWatchlist,
+    syncState,
+    syncError,
+    lastSyncedAt,
+    pull,
+    forcePush,
   } = useWatchlist();
 
   const watchlistCodes = useMemo(
@@ -40,7 +50,7 @@ function App() {
     [watchlist]
   );
 
-  // 加载股票列表
+  // 加载股票列表（行业映射异步补充，失败不影响列表）
   const loadStocks = async (force = false) => {
     if (force) setRefreshing(true);
     setListLoading(true);
@@ -49,6 +59,7 @@ function App() {
       if (force) clearStockListCache();
       const data = await fetchStockList();
       setStocks(data);
+      fetchIndustryMap().then(setIndustryMap).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -92,14 +103,32 @@ function App() {
     loadStocks();
   }, []);
 
-  // 展示的股票列表：搜索过滤（前端本地过滤，列表已在内存中）
+  // 展示的股票列表：搜索 + 行业 + ST 过滤（前端本地过滤，列表已在内存中）
   const displayStocks = useMemo(() => {
     const kw = searchKeyword.trim();
-    if (!kw) return stocks;
-    return stocks.filter(
-      (s) => s.code.includes(kw) || s.name.includes(kw)
-    );
-  }, [stocks, searchKeyword]);
+    // industryFilter 格式 'sw1:食品饮料' / 'sw2:饮料乳品' / 'sw3:乳品'
+    const [level, name] = industryFilter ? industryFilter.split(':') : [];
+    return stocks.filter((s) => {
+      if (kw && !s.code.includes(kw) && !s.name.includes(kw)) return false;
+      if (hideST && s.name.includes('ST')) return false;
+      if (level && industryMap[`${s.code}.${s.exchange}`]?.[level as keyof IndustryInfo] !== name) return false;
+      return true;
+    });
+  }, [stocks, searchKeyword, hideST, industryFilter, industryMap]);
+
+  // 行业层级树：sw1 -> sw2 -> [sw3]
+  const industryTree = useMemo(() => {
+    const tree: Record<string, Record<string, Set<string>>> = {};
+    for (const info of Object.values(industryMap)) {
+      if (!info.sw1) continue;
+      const l1 = (tree[info.sw1] = tree[info.sw1] || {});
+      if (info.sw2) {
+        const l2 = (l1[info.sw2] = l1[info.sw2] || new Set());
+        if (info.sw3) l2.add(info.sw3);
+      }
+    }
+    return tree;
+  }, [industryMap]);
 
   return (
     <div className="app">
@@ -107,6 +136,7 @@ function App() {
         <h1>价值罗盘</h1>
         <div className="status-bar">
           <span>数据源: TickFlow</span>
+          <SyncPanel syncState={syncState} syncError={syncError} lastSyncedAt={lastSyncedAt} pull={pull} forcePush={forcePush} />
         </div>
       </header>
 
@@ -124,6 +154,13 @@ function App() {
                 {refreshing ? '刷新中...' : '刷新列表'}
               </button>
             </div>
+            <div className="filter-bar">
+              <IndustrySelect tree={industryTree} value={industryFilter} onChange={setIndustryFilter} />
+              <label className="filter-check">
+                <input type="checkbox" checked={hideST} onChange={(e) => setHideST(e.target.checked)} />
+                隐藏 ST
+              </label>
+            </div>
           </div>
 
           <div className="tab-bar">
@@ -131,7 +168,7 @@ function App() {
               className={`tab ${activeTab === 'all' ? 'active' : ''}`}
               onClick={() => setActiveTab('all')}
             >
-              全部股票
+              全部股票 ({displayStocks.length})
             </button>
             <button
               className={`tab ${activeTab === 'watchlist' ? 'active' : ''}`}

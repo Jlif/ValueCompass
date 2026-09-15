@@ -36,7 +36,12 @@ export function StockF10({ stock }: Props) {
     const symbol = `${stock.code}.${stock.exchange}`;
     Promise.all([
       fetchInstrument(stock),
-      fetchIndustryMap().then((map) => map[symbol] || null).catch(() => null),
+      fetchIndustryMap()
+        .then((map) => {
+          const info = map[symbol];
+          return info ? info.sw3 || info.sw2 || info.sw1 : null;
+        })
+        .catch(() => null),
       fetchSinaFinance(stock).catch((e) => {
         setFinanceError(String(e.message || e));
         return null;

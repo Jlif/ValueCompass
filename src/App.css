@@ -803,3 +803,177 @@ body {
   font-size: 12px;
   padding: 5px 10px;
 }
+
+/* ===== 云同步 ===== */
+.sync-wrap {
+  position: relative;
+}
+
+.sync-panel {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 100;
+  width: 300px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sync-panel input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #e2e8f0;
+}
+
+.sync-panel input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.sync-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.sync-url {
+  color: #60a5fa;
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ===== 列表过滤栏 ===== */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.filter-bar select {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #e2e8f0;
+}
+
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: #94a3b8;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ===== 行业树形下拉 ===== */
+.islt {
+  position: relative;
+  flex: 1;
+}
+
+.islt-btn {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #e2e8f0;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.islt-caret {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.islt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.islt-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 100;
+  max-height: 340px;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.islt-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.islt-item:hover {
+  background: #334155;
+}
+
+.islt-active {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.islt-toggle {
+  color: #64748b;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.islt-children {
+  padding-left: 16px;
+  border-left: 1px solid #334155;
+  margin-left: 12px;
+}
+
+.islt-l3 {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* 有子级的行：整行点击展开 */
+.islt-branch {
+  cursor: pointer;
+}
+
+/* 层级内"全部 xx"选择项 */
+.islt-all {
+  color: #60a5fa;
+  font-size: 12px;
+}

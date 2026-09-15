@@ -148,10 +148,17 @@ export async function fetchInstrument(stock: Stock): Promise<Instrument> {
 }
 
 // ponytail: SW 行业映射一次性全量拉取（1005 个池约 340KB），localStorage 缓存 7 天
-const INDUSTRY_CACHE_KEY = 'vc_industry_map';
+const INDUSTRY_CACHE_KEY = 'vc_industry_map_v2';
 const INDUSTRY_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
-export async function fetchIndustryMap(): Promise<Record<string, string>> {
+// 每只股票的申万行业（一/二/三级，去掉 SWx 前缀）
+export interface IndustryInfo {
+  sw1: string;
+  sw2: string;
+  sw3: string;
+}
+
+export async function fetchIndustryMap(): Promise<Record<string, IndustryInfo>> {
   const cached = localStorage.getItem(INDUSTRY_CACHE_KEY);
   if (cached) {
     try {
@@ -168,20 +175,16 @@ export async function fetchIndustryMap(): Promise<Record<string, string>> {
     undefined,
     { ids: swIds }
   );
-  // 构建 symbol -> 行业名，SW3（最细）优先
-  const level = (id: string) => Number(id.split('_')[2].slice(2));
-  const map: Record<string, string> = {};
+  const map: Record<string, IndustryInfo> = {};
   for (const [id, info] of Object.entries(details)) {
+    // id 形如 CN_Equity_SW1_220000，name 形如 "SW1基础化工"
+    const level = Number(id.split('_')[2].slice(2));
+    const name = info.name.replace(/^SW\d/, '');
     for (const sym of info.symbols || []) {
-      if (!map[sym] || level(id) > levelFromKey(map[sym])) {
-        map[sym] = info.name;
-      }
+      const item = (map[sym] = map[sym] || { sw1: '', sw2: '', sw3: '' });
+      item[`sw${level}` as keyof IndustryInfo] = name;
     }
   }
   localStorage.setItem(INDUSTRY_CACHE_KEY, JSON.stringify({ ts: Date.now(), map }));
   return map;
-}
-
-function levelFromKey(name: string): number {
-  return name.startsWith('SW3') ? 3 : name.startsWith('SW2') ? 2 : 1;
 }

@@ -143,6 +143,9 @@ export function KlineChart({ data, height = 400, period = 'daily', indicators = 
         borderColor: '#334155',
         scaleMargins: { top: 0.1, bottom: 0.2 },
       },
+      // 滚轮交还给页面滚动（看下面的财务数据），缩放/平移用拖拽和坐标轴
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
       timeScale: {
         borderColor: '#334155',
         timeVisible: false,
