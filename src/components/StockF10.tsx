@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchIndustryMap, fetchInstrument, Instrument } from '../services/tickflow';
-import { fetchSinaFinance, METRIC_GROUPS, SinaData } from '../services/sina';
+import { fetchFinance, METRIC_GROUPS, FinanceData } from '../services/finance';
 import type { Stock } from '../types';
 
 interface Props {
@@ -21,7 +21,7 @@ function periodLabel(p: string): string {
 export function StockF10({ stock }: Props) {
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [industry, setIndustry] = useState<string | null>(null);
-  const [finance, setFinance] = useState<SinaData | null>(null);
+  const [finance, setFinance] = useState<FinanceData | null>(null);
   const [financeError, setFinanceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -42,7 +42,7 @@ export function StockF10({ stock }: Props) {
           return info ? info.sw3 || info.sw2 || info.sw1 : null;
         })
         .catch(() => null),
-      fetchSinaFinance(stock).catch((e) => {
+      fetchFinance(stock).catch((e) => {
         setFinanceError(String(e.message || e));
         return null;
       }),
@@ -84,7 +84,7 @@ export function StockF10({ stock }: Props) {
           </div>
 
           <div className="f10-section">
-            <h3>关键财务数据 <span className="f10-source">数据源: 新浪财经</span></h3>
+            <h3>关键财务数据 <span className="f10-source">数据源: 东方财富</span></h3>
             {financeError ? (
               <div className="f10-permission-tip">财务数据加载失败: {financeError}</div>
             ) : !finance ? (
@@ -126,7 +126,7 @@ function FragmentGroup({
   title: string;
   group: (typeof METRIC_GROUPS)[number];
   periods: string[];
-  finance: SinaData;
+  finance: FinanceData;
 }) {
   return (
     <>

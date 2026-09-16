@@ -9,8 +9,8 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://money.finance.sina.com.cn/*" },
-        { "url": "https://emweb.securities.eastmoney.com/*" }
+        { "url": "https://emweb.securities.eastmoney.com/*" },
+        { "url": "https://datacenter.eastmoney.com/*" }
       ]
     }
   ]

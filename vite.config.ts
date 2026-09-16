@@ -17,14 +17,8 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    // 新浪财务数据代理（解决浏览器 CORS；新浪无跨域头）
+    // 东财 F10 财务数据代理（解决浏览器 CORS）
     proxy: {
-      "/sina": {
-        target: "https://money.finance.sina.com.cn",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/sina/, ""),
-      },
-      // 东财 F10 补充数据源（新准则科目）
       "/em": {
         target: "https://emweb.securities.eastmoney.com",
         changeOrigin: true,
