@@ -4608,7 +4608,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vctemp"
+name = "valuecompass"
 version = "0.1.0"
 dependencies = [
  "tauri",

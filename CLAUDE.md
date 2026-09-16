@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-项目名称：ValueCompass2
+项目名称：ValueCompass
 技术栈：Tauri v2 + React 19 + TypeScript + Rust（桌面壳）
 项目描述：A股价值分析桌面应用 - 基于 TickFlow API 的股票数据分析工具
 

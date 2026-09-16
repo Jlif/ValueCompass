@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ValueCompass2",
+  "productName": "ValueCompass",
   "version": "0.1.0",
-  "identifier": "com.jiangchen.valuecompass2",
+  "identifier": "com.jiangchen.valuecompass",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ValueCompass2 - A股价值分析",
+        "title": "ValueCompass - A股价值分析",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
