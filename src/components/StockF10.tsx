@@ -136,14 +136,15 @@ function FragmentGroup({
       {group.rows.map((row) => (
         <tr key={row.label}>
           <td className="f10-metric-label">{row.label}</td>
-          {periods.map((p) => (
-            <td key={p}>
-              {fmtNum(
-                row.transform ? row.transform(finance[row.src][p]?.[row.key] ?? null) : finance[row.src][p]?.[row.key] ?? null,
-                row.pct
-              )}
-            </td>
-          ))}
+          {periods.map((p) => {
+            const ds = finance[row.src][p];
+            const val = (k: string) =>
+              row.transform ? row.transform(ds?.[k] ?? null) : ds?.[k] ?? null;
+            const v1 = fmtNum(val(row.key), row.pct);
+            return (
+              <td key={p}>{row.alt ? `${v1} / ${fmtNum(val(row.alt), row.pct)}` : v1}</td>
+            );
+          })}
         </tr>
       ))}
     </>

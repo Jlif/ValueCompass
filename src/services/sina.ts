@@ -60,6 +60,58 @@ export interface SinaData {
   cashflow: SinaFinance; // 现金流量表（万元）
 }
 
+// ===== 东财补充源 =====
+// 新浪资产负债表模板停留在旧准则科目，缺「其他权益工具投资」等新准则科目，
+// 从东财 F10 按需补充（东财单位:元，转万元与新浪对齐）。失败静默降级，不影响新浪主数据。
+interface EmBalanceRow {
+  REPORT_DATE: string;
+  OTHER_EQUITY_INVEST: number | null;
+}
+
+const EM_HOST = 'https://emweb.securities.eastmoney.com';
+
+async function emFetch(path: string): Promise<{ data?: EmBalanceRow[] }> {
+  const res = isTauri
+    ? await (await import('@tauri-apps/plugin-http')).fetch(EM_HOST + path)
+    : await fetch(`/em${path}`);
+  if (!res.ok) throw new Error(`东财接口 ${res.status}`);
+  return res.json();
+}
+
+// 东财按公司类型分四套表（4通用/2保险/3券商/1银行），无类型探测接口，并行取首个有数据的
+async function emBalanceRows(stock: Stock, dates: string, ct?: number): Promise<{ ct: number; rows: EmBalanceRow[] }> {
+  const code = `${/^[69]/.test(stock.code) ? 'SH' : /^[48]/.test(stock.code) ? 'BJ' : 'SZ'}${stock.code}`;
+  const q = (t: number) =>
+    `/PC_HSF10/NewFinanceAnalysis/ZcfzbAjaxNew?companyType=${t}&reportDateType=0&reportType=1&dates=${dates}&code=${code}`;
+  const probes = await Promise.allSettled(
+    (ct ? [ct] : [4, 2, 3, 1]).map(async (t) => {
+      const rows = (await emFetch(q(t))).data;
+      if (!rows?.length) throw new Error(`companyType=${t} 无数据`);
+      return rows;
+    })
+  );
+  const hit = probes.findIndex((p) => p.status === 'fulfilled');
+  if (hit < 0) throw new Error('东财资产负债表无数据');
+  return { ct: (ct ? [ct] : [4, 2, 3, 1])[hit], rows: (probes[hit] as PromiseFulfilledResult<EmBalanceRow[]>).value };
+}
+
+async function fetchEmBalance(stock: Stock, periods: string[]): Promise<SinaFinance> {
+  const out: SinaFinance = {};
+  try {
+    // dates 每次最多 5 个；首个请求同时完成类型探测
+    let { ct, rows } = await emBalanceRows(stock, periods.slice(0, 5).join(','));
+    const rest = periods.slice(5);
+    if (rest.length) rows = rows.concat((await emBalanceRows(stock, rest.join(','), ct)).rows);
+    for (const d of rows) {
+      const p = d.REPORT_DATE.slice(0, 10);
+      if (d.OTHER_EQUITY_INVEST != null) out[p] = { ...out[p], 其他权益工具投资: d.OTHER_EQUITY_INVEST / 1e4 };
+    }
+  } catch {
+    // ponytail: 东财仅是补充字段，任一环节失败就放弃补充
+  }
+  return out;
+}
+
 // 最近 5 个年报 + 2 个半年报需要 6 个年度页（每年一页含 4 期）
 export async function fetchSinaFinance(stock: Stock, years = 6): Promise<SinaData> {
   const thisYear = new Date().getFullYear();
@@ -77,6 +129,14 @@ export async function fetchSinaFinance(stock: Stock, years = 6): Promise<SinaDat
     balance: merge(balances),
     cashflow: merge(cashflows),
   };
+  // 补充新准则科目（F10 显示 5 年报 + 2 半年报）；按期深合并，避免覆盖新浪同期的整行数据
+  const emPeriods = [
+    ...yearList.map((y) => `${y}-12-31`),
+    `${thisYear - 1}-06-30`,
+    `${thisYear - 2}-06-30`,
+  ];
+  const em = await fetchEmBalance(stock, emPeriods);
+  for (const p of Object.keys(em)) data.balance[p] = { ...data.balance[p], ...em[p] };
   deriveMetrics(data);
   return data;
 }
@@ -218,6 +278,7 @@ export interface MetricRow {
   label: string;
   src: keyof SinaData;
   key: string;
+  alt?: string; // 同行第二指标，值以 " / " 拼接展示（构成类指标）
   pct?: boolean;
   transform?: (v: number | null) => number | null;
 }
@@ -275,6 +336,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
     title: '资产负债结构',
     rows: [
       { label: '现金占比', src: 'balance', key: '现金占比', pct: true },
+      { label: '货币资金/交易性金融资产(亿)', src: 'balance', key: '货币资金', alt: '交易性金融资产', transform: WAN_TO_YI },
       { label: '货币资金占比', src: 'balance', key: '货币资金占比', pct: true },
       { label: '存货占比', src: 'balance', key: '存货占比', pct: true },
       { label: '应收款占比', src: 'balance', key: '应收款占比', pct: true },
@@ -283,6 +345,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       { label: '固定资产占比', src: 'balance', key: '固定资产占比', pct: true },
       { label: '投资性房地产占比', src: 'balance', key: '投资性房地产占比', pct: true },
       { label: '长期股权投资占比', src: 'balance', key: '长期股权投资占比', pct: true },
+      { label: '长期股权投资/其他权益工具投资(亿)', src: 'balance', key: '长期股权投资', alt: '其他权益工具投资', transform: WAN_TO_YI },
       { label: '商誉占比', src: 'balance', key: '商誉占比', pct: true },
     ],
   },

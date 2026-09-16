@@ -24,6 +24,12 @@ export default defineConfig(async () => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/sina/, ""),
       },
+      // 东财 F10 补充数据源（新准则科目）
+      "/em": {
+        target: "https://emweb.securities.eastmoney.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/em/, ""),
+      },
     },
     hmr: host
       ? {

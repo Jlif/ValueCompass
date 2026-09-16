@@ -8,7 +8,10 @@
     "opener:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://money.finance.sina.com.cn/*" }]
+      "allow": [
+        { "url": "https://money.finance.sina.com.cn/*" },
+        { "url": "https://emweb.securities.eastmoney.com/*" }
+      ]
     }
   ]
 }
