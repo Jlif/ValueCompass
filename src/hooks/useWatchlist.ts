@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stock } from '../types';
-import { loadSyncConfig, pullWatchlist, pushWatchlist } from '../services/gist';
+import { clearSyncConfig, loadSyncConfig, pullWatchlist, pushWatchlist } from '../services/gist';
 
 // ponytail: 自选列表存 localStorage；配置了 GitHub 同步时，变更防抖上传，启动时拉取合并
 const WATCHLIST_KEY = 'vc_watchlist';
@@ -92,6 +92,14 @@ export function useWatchlist() {
     }
   }, [watchlist]);
 
+  // 断开同步：清配置并把状态复位，否则按钮还挂着上一次的「已同步」
+  const disconnect = useCallback(() => {
+    clearSyncConfig();
+    setSyncState('off');
+    setSyncError(null);
+    setLastSyncedAt(null);
+  }, []);
+
   useEffect(() => {
     pull();
     // 仅启动时拉取一次
@@ -108,5 +116,5 @@ export function useWatchlist() {
 
   const isInWatchlist = useCallback((code: string) => watchlist.some((s) => s.code === code), [watchlist]);
 
-  return { watchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, syncState, syncError, lastSyncedAt, pull, forcePush };
+  return { watchlist, addToWatchlist, removeFromWatchlist, isInWatchlist, syncState, syncError, lastSyncedAt, pull, forcePush, disconnect };
 }

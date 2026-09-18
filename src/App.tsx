@@ -43,6 +43,7 @@ function App() {
     lastSyncedAt,
     pull,
     forcePush,
+    disconnect,
   } = useWatchlist();
 
   const watchlistCodes = useMemo(
@@ -136,7 +137,14 @@ function App() {
         <h1>价值罗盘</h1>
         <div className="status-bar">
           <span>数据源: TickFlow</span>
-          <SyncPanel syncState={syncState} syncError={syncError} lastSyncedAt={lastSyncedAt} pull={pull} forcePush={forcePush} />
+          <SyncPanel
+            syncState={syncState}
+            syncError={syncError}
+            lastSyncedAt={lastSyncedAt}
+            pull={pull}
+            forcePush={forcePush}
+            disconnect={disconnect}
+          />
         </div>
       </header>
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { clearSyncConfig, createGist, loadSyncConfig, saveSyncConfig } from '../services/gist';
+import { findOrCreateGist, loadSyncConfig, saveSyncConfig } from '../services/gist';
 import type { SyncState } from '../hooks/useWatchlist';
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   lastSyncedAt: number | null;
   pull: () => Promise<void>;
   forcePush: () => Promise<void>;
+  disconnect: () => void;
 }
 
 const STATE_LABEL: Record<SyncState, string> = {
@@ -18,7 +19,7 @@ const STATE_LABEL: Record<SyncState, string> = {
   error: '同步失败',
 };
 
-export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush }: Props) {
+export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush, disconnect }: Props) {
   const [open, setOpen] = useState(false);
   const [configured, setConfigured] = useState(() => !!loadSyncConfig());
   const [token, setToken] = useState('');
@@ -39,7 +40,7 @@ export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush 
   const handleCreate = async () => {
     setSetupError(null);
     try {
-      const id = await createGist(token);
+      const id = await findOrCreateGist(token);
       saveSyncConfig({ token, gistId: id });
       setConfigured(true);
       pull();
@@ -60,7 +61,7 @@ export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush 
   };
 
   const handleDisconnect = () => {
-    clearSyncConfig();
+    disconnect();
     setConfigured(false);
     setGistId('');
     setOpen(false);
@@ -86,8 +87,9 @@ export function SyncPanel({ syncState, syncError, lastSyncedAt, pull, forcePush 
                 onChange={(e) => setToken(e.target.value)}
               />
               <button className="btn-small btn-primary" onClick={handleCreate} disabled={!token}>
-                自动创建同步 Gist
+                连接同步 Gist
               </button>
+              <p className="sync-hint">已有同步 Gist 会自动复用，没有才新建。</p>
               <p className="sync-hint">或使用已有的同步 Gist：</p>
               <input placeholder="Gist ID" value={gistId} onChange={(e) => setGistId(e.target.value)} />
               <button className="btn-small" onClick={handleUseExisting}>绑定已有 Gist</button>

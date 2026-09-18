@@ -43,10 +43,25 @@ async function gh(path: string, token: string, method = 'GET', body?: unknown): 
   return res;
 }
 
-// 用 token 自动创建一个 secret gist，返回 gist id
-export async function createGist(token: string): Promise<string> {
+const SYNC_DESC = 'ValueCompass2 自选列表同步';
+
+interface GistBrief {
+  id: string;
+  description: string | null;
+  files?: Record<string, unknown>;
+}
+
+// 复用账号下已有的同步 gist（换机器时靠这个接回旧数据），没有才新建
+// ponytail: 只查最近 100 个，gist 多到溢出一页再加分页
+export async function findOrCreateGist(token: string): Promise<string> {
+  const list = await gh('/gists?per_page=100', token);
+  const existing = ((await list.json()) as GistBrief[]).find(
+    (g) => g.description === SYNC_DESC && g.files?.[SYNC_FILE],
+  );
+  if (existing) return existing.id;
+
   const res = await gh('/gists', token, 'POST', {
-    description: 'ValueCompass2 自选列表同步',
+    description: SYNC_DESC,
     public: false,
     files: { [SYNC_FILE]: { content: JSON.stringify({ updated: 0, stocks: [] }) } },
   });
