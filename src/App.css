@@ -977,3 +977,345 @@ body {
   color: #60a5fa;
   font-size: 12px;
 }
+
+/* ===== 自选分组 ===== */
+.group-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* 右侧留出分组管理按钮的位置，避免换行时 chip 压到按钮下面 */
+  padding: 8px 44px 8px 12px;
+  border-bottom: 1px solid #334155;
+  background: #0f172a;
+}
+
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.group-chip:hover {
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+.group-chip.active {
+  border-color: #3b82f6;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* 拖拽悬停提示可放入 */
+.group-chip.drag-over {
+  border-color: #fbbf24;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.group-count {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.group-add {
+  width: 26px;
+  height: 26px;
+  border: 1px dashed #475569;
+  border-radius: 999px;
+  background: none;
+  color: #64748b;
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.group-add:hover {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.group-input {
+  width: 120px;
+  padding: 4px 10px;
+  border: 1px solid #3b82f6;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  outline: none;
+}
+
+/* ===== 分组管理面板 ===== */
+/* 按钮绝对定位在分组栏右侧垂直居中，不跟随 chip 换行 */
+.gm-wrap {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.gm-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid #475569;
+  border-radius: 999px;
+  background: none;
+  color: #64748b;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.gm-btn:hover {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.gm-panel {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 100;
+  width: 250px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.gm-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  color: #e2e8f0;
+}
+
+.gm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.gm-row.dragging {
+  opacity: 0.4;
+}
+
+.gm-handle {
+  cursor: grab;
+  color: #475569;
+  font-size: 14px;
+  user-select: none;
+}
+
+.gm-handle:hover {
+  color: #94a3b8;
+}
+
+.gm-name {
+  flex: 1;
+  font-size: 13px;
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gm-count {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.gm-icon {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  line-height: 1;
+}
+
+.gm-icon:hover {
+  color: #60a5fa;
+}
+
+.gm-del:hover {
+  color: #f87171;
+}
+
+.gm-del-confirm {
+  background: rgba(248, 113, 113, 0.15);
+  border: none;
+  border-radius: 4px;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.gm-del-confirm:hover {
+  background: rgba(248, 113, 113, 0.3);
+}
+
+.gm-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #1e293b;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  color: #e2e8f0;
+  outline: none;
+}
+
+.gm-add {
+  margin-top: 4px;
+  padding: 6px;
+  background: none;
+  border: 1px dashed #475569;
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gm-add:hover {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+/* ===== 股票行「加入分组」菜单 ===== */
+.sgm-btn {
+  background: none;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 3px;
+}
+
+.sgm-btn:hover {
+  color: #60a5fa;
+}
+
+.sgm-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 130px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sgm-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sgm-item:hover {
+  background: #0f172a;
+}
+
+.sgm-arrow {
+  color: #64748b;
+  font-size: 10px;
+}
+
+/* 分组清单向右级联展开；fixed 父级不受 stock-list overflow 裁剪 */
+.sgm-sub {
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  min-width: 140px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sgm-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.sgm-group:hover {
+  background: #0f172a;
+  color: #60a5fa;
+}
+
+.sgm-check {
+  width: 12px;
+  color: #3b82f6;
+  font-size: 11px;
+}
+
+.sgm-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* 分组视图下移出分组 */
+.group-remove-btn {
+  background: none;
+  border: none;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.group-remove-btn:hover {
+  color: #f87171;
+}

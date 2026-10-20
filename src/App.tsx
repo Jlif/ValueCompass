@@ -2,11 +2,16 @@ import { useMemo, useState, useEffect } from 'react';
 import { KlineChart } from './components/KlineChart';
 import { StockF10 } from './components/StockF10';
 import { SyncPanel } from './components/SyncPanel';
+import { GroupManager } from './components/GroupManager';
+import { StockGroupMenu } from './components/StockGroupMenu';
 import { IndustrySelect } from './components/IndustrySelect';
 import { useWatchlist } from './hooks/useWatchlist';
 import { fetchIndustryMap, fetchKline, fetchStockList, clearStockListCache, KlinePeriod, IndustryInfo } from './services/tickflow';
 import type { Stock, KlineData } from './types';
 import './App.css';
+
+// 自选 tab 内拖拽股票时的载体（HTML5 DnD 只能存 string）
+const DRAG_MIME = 'application/x-vc-stock';
 
 type Period = KlinePeriod;
 type Tab = 'all' | 'watchlist';
@@ -32,12 +37,23 @@ function App() {
   const [industryMap, setIndustryMap] = useState<Record<string, IndustryInfo>>({});
   const [industryFilter, setIndustryFilter] = useState('');
   const [hideST, setHideST] = useState(true);
+  // 自选分组：null = 全部；newGroupName 为 null 关闭输入，'' 打开空输入
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState<string | null>(null);
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
 
   const {
     watchlist,
+    groups,
     addToWatchlist,
     removeFromWatchlist,
     isInWatchlist,
+    createGroup,
+    removeGroup,
+    renameGroup,
+    moveGroup,
+    addToGroup,
+    removeFromGroup,
     syncState,
     syncError,
     lastSyncedAt,
@@ -131,6 +147,21 @@ function App() {
     return tree;
   }, [industryMap]);
 
+  // 自选 tab 当前显示的列表：分组视图按分组 codes 顺序映射回 Stock（孤儿 code 剔除）
+  const groupStocks = useMemo(() => {
+    if (!activeGroup) return watchlist;
+    const g = groups.find((x) => x.id === activeGroup);
+    if (!g) return watchlist;
+    const byCode = new Map(watchlist.map((s) => [s.code, s]));
+    return g.codes.map((c) => byCode.get(c)).filter((s): s is Stock => !!s);
+  }, [activeGroup, groups, watchlist]);
+
+  // 删掉当前正在看的分组要退回「全部」（chip 上的 × 和管理面板共用）
+  const handleRemoveGroup = (id: string) => {
+    removeGroup(id);
+    if (activeGroup === id) setActiveGroup(null);
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -186,6 +217,68 @@ function App() {
             </button>
           </div>
 
+          {activeTab === 'watchlist' && (
+            <div className="group-bar">
+              <button
+                className={`group-chip ${activeGroup === null ? 'active' : ''}`}
+                onClick={() => setActiveGroup(null)}
+              >
+                全部
+              </button>
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  className={`group-chip ${activeGroup === g.id ? 'active' : ''} ${dragOverGroup === g.id ? 'drag-over' : ''}`}
+                  onClick={() => setActiveGroup(g.id)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverGroup(g.id);
+                  }}
+                  onDragLeave={() => setDragOverGroup(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverGroup(null);
+                    const code = e.dataTransfer.getData(DRAG_MIME);
+                    if (code) addToGroup(g.id, code);
+                  }}
+                >
+                  {g.name}
+                  <span className="group-count">{g.codes.filter((c) => watchlistCodes.has(c)).length}</span>
+                </button>
+              ))}
+              {newGroupName === null ? (
+                <button className="group-add" title="新建分组" onClick={() => setNewGroupName('')}>
+                  +
+                </button>
+              ) : (
+                <input
+                  className="group-input"
+                  autoFocus
+                  placeholder="分组名，回车确认"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  onBlur={() => setNewGroupName(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newGroupName.trim()) {
+                      createGroup(newGroupName.trim());
+                      setNewGroupName(null);
+                    } else if (e.key === 'Escape') {
+                      setNewGroupName(null);
+                    }
+                  }}
+                />
+              )}
+              <GroupManager
+                groups={groups}
+                watchlistCodes={watchlistCodes}
+                createGroup={createGroup}
+                renameGroup={renameGroup}
+                removeGroup={handleRemoveGroup}
+                moveGroup={moveGroup}
+              />
+            </div>
+          )}
+
           <div className="stock-list">
             {error && <div className="error">错误: {error}</div>}
             {activeTab === 'all' ? (
@@ -206,6 +299,13 @@ function App() {
                     <span className="stock-code">{stock.code}</span>
                     <span className="stock-name">{stock.name}</span>
                     <span className="stock-exchange">{stock.exchange}</span>
+                    <StockGroupMenu
+                      stock={stock}
+                      groups={groups}
+                      inWatchlist={watchlistCodes.has(stock.code)}
+                      addToWatchlist={addToWatchlist}
+                      addToGroup={addToGroup}
+                    />
                     <button
                       className={`watchlist-btn ${watchlistCodes.has(stock.code) ? 'in-watchlist' : ''}`}
                       onClick={(e) => toggleWatchlist(stock, e)}
@@ -218,13 +318,20 @@ function App() {
               </>
             ) : (
               <>
-                {watchlist.length === 0 && (
-                  <div className="empty">暂无自选股票，在"全部股票"中添加</div>
+                {groupStocks.length === 0 && (
+                  <div className="empty">
+                    {activeGroup ? '分组为空，把股票拖到分组名上即可加入' : '暂无自选股票，在"全部股票"中添加'}
+                  </div>
                 )}
-                {watchlist.map((stock) => (
+                {groupStocks.map((stock) => (
                   <div
                     key={stock.code}
                     className={`stock-item ${selectedStock?.code === stock.code ? 'active' : ''}`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(DRAG_MIME, stock.code);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
                     onClick={() => {
                       setPeriod('daily');
                       fetchKlineData(stock, 'daily');
@@ -233,6 +340,25 @@ function App() {
                     <span className="stock-code">{stock.code}</span>
                     <span className="stock-name">{stock.name}</span>
                     <span className="stock-exchange">{stock.exchange}</span>
+                    {activeGroup && (
+                      <button
+                        className="group-remove-btn"
+                        title="移出该分组"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromGroup(activeGroup, stock.code);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                    <StockGroupMenu
+                      stock={stock}
+                      groups={groups}
+                      inWatchlist={watchlistCodes.has(stock.code)}
+                      addToWatchlist={addToWatchlist}
+                      addToGroup={addToGroup}
+                    />
                     <button
                       className="watchlist-btn in-watchlist"
                       onClick={(e) => toggleWatchlist(stock, e)}

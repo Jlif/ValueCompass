@@ -1,4 +1,5 @@
 import type { Stock } from '../types';
+import type { WatchGroup } from '../hooks/useWatchlist';
 
 // GitHub Gist 云同步：自选列表整包存为一个 secret gist 文件，last-write-wins
 const SYNC_FILE = 'valuecompass-watchlist.json';
@@ -69,17 +70,19 @@ export async function findOrCreateGist(token: string): Promise<string> {
   return json.id as string;
 }
 
-export async function pullWatchlist(cfg: SyncConfig): Promise<{ stocks: Stock[]; updated: number } | null> {
+export async function pullWatchlist(
+  cfg: SyncConfig
+): Promise<{ stocks: Stock[]; groups: WatchGroup[]; updated: number } | null> {
   const res = await gh(`/gists/${cfg.gistId}`, cfg.token);
   const json = await res.json();
   const content = json.files?.[SYNC_FILE]?.content;
   if (!content) return null;
   const parsed = JSON.parse(content);
-  return { stocks: parsed.stocks || [], updated: parsed.updated || 0 };
+  return { stocks: parsed.stocks || [], groups: parsed.groups || [], updated: parsed.updated || 0 };
 }
 
-export async function pushWatchlist(cfg: SyncConfig, stocks: Stock[]): Promise<void> {
+export async function pushWatchlist(cfg: SyncConfig, stocks: Stock[], groups: WatchGroup[]): Promise<void> {
   await gh(`/gists/${cfg.gistId}`, cfg.token, 'PATCH', {
-    files: { [SYNC_FILE]: { content: JSON.stringify({ updated: Date.now(), stocks }) } },
+    files: { [SYNC_FILE]: { content: JSON.stringify({ updated: Date.now(), stocks, groups }) } },
   });
 }
