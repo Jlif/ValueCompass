@@ -13,11 +13,21 @@ async function request<T>(path: string, params?: Record<string, string>, body?: 
   if (params) {
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   }
-  const res = await fetch(url.toString(), {
-    headers: { 'x-api-key': apiKey(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    method: body ? 'POST' : 'GET',
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const send = () =>
+    fetch(url.toString(), {
+      headers: { 'x-api-key': apiKey(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      method: body ? 'POST' : 'GET',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  let res = await send();
+  // klines 限频 10/min 触发 429 时，服务端 message 形如「…请 26446ms 后重试」，按提示等一次再试
+  if (res.status === 429) {
+    const text = await res.text().catch(() => '');
+    // ponytail: 封顶 30s，超过就抛错让用户稍后手动重试
+    const ms = Math.min(Number(text.match(/请 (\d+)ms 后重试/)?.[1] ?? 5000) + 500, 30500);
+    await new Promise((r) => setTimeout(r, ms));
+    res = await send();
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`TickFlow ${res.status}: ${body || res.statusText}`);

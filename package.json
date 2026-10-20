@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check:cache": "node scripts/check-cache.mjs"
+    "check:cache": "node scripts/check-cache.mjs",
+    "check:retry": "node scripts/check-retry.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
