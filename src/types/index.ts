@@ -14,3 +14,21 @@ export interface KlineData {
   close: number;
   volume: number;
 }
+
+// 实时行情（TickFlow，A 股和港股共用）
+export interface StockQuote {
+  symbol: string;
+  name: string | null;
+  lastPrice: number;
+  prevClose: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount: number;
+  changeAmount: number | null;
+  changePct: number | null;
+  amplitude: number | null;
+  turnoverRate: number | null;
+  timestamp: number;
+}

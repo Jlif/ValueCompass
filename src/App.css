@@ -153,6 +153,38 @@ body {
   background: #2563eb;
 }
 
+.market-filter {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.market-filter button {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.market-filter button:hover {
+  color: #e2e8f0;
+  background: #334155;
+}
+
+.market-filter button.active {
+  color: #eff6ff;
+  background: #2563eb;
+}
+
 .btn-primary {
   padding: 10px 16px;
   border: none;
@@ -183,11 +215,11 @@ body {
 }
 
 .stock-item {
-  padding: 12px 16px;
+  padding: 9px 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   border-radius: 8px;
   margin: 2px 4px;
   transition: all 0.2s ease;
@@ -214,19 +246,45 @@ body {
   color: #f8fafc;
 }
 
+.stock-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .stock-code {
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   color: #94a3b8;
-  min-width: 70px;
 }
 
 .stock-name {
-  flex: 1;
   font-size: 14px;
   color: #cbd5e1;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stock-board {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(96, 165, 250, 0.1);
+  color: #93c5fd;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .stock-exchange {
@@ -237,6 +295,90 @@ body {
   border-radius: 4px;
   font-weight: 500;
   text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.stock-exchange.hk {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+/* ===== 全部股票：市场与板块折叠树 ===== */
+.market-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.market-group {
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+  padding-bottom: 4px;
+}
+
+.market-group-header,
+.board-group-header {
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.market-group-header {
+  margin: 2px 0;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: #172234;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.market-group-header:hover,
+.market-group-header.open {
+  background: #1e3a5f;
+  color: #bfdbfe;
+}
+
+.board-group {
+  margin: 2px 5px 5px 14px;
+  border-left: 1px solid #334155;
+}
+
+.board-group-header {
+  padding: 8px 10px;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.board-group-header:hover,
+.board-group-header.open {
+  background: rgba(51, 65, 85, 0.72);
+  color: #dbeafe;
+}
+
+.tree-caret {
+  width: 10px;
+  color: #60a5fa;
+  font-size: 10px;
+}
+
+.market-group-name {
+  flex: 1;
+}
+
+.tree-count {
+  margin-left: auto;
+  color: #64748b;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 /* ===== Watchlist Button ===== */
@@ -325,7 +467,7 @@ body {
 
 /* ===== Stock Detail ===== */
 .stock-detail h2 {
-  margin: 0 0 24px 0;
+  margin: 0 0 12px 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -342,6 +484,80 @@ body {
   border-radius: 6px;
   font-weight: 500;
   border: 1px solid #334155;
+}
+
+.stock-detail .exchange.hk {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.quote-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  min-height: 44px;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.quote-muted {
+  color: #64748b;
+}
+
+.quote-last {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-currency {
+  margin-left: -10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.quote-change {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-bar .up {
+  color: #f87171;
+}
+
+.quote-bar .down {
+  color: #34d399;
+}
+
+.quote-divider {
+  width: 1px;
+  height: 22px;
+  background: #334155;
+}
+
+.quote-stat b {
+  margin-left: 2px;
+  color: #cbd5e1;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-time {
+  margin-left: auto;
+  color: #64748b;
+}
+
+.quote-warning {
+  color: #fbbf24;
 }
 
 /* ===== K-line Wrapper ===== */
@@ -778,6 +994,14 @@ body {
 .f10-table th {
   color: #94a3b8;
   font-weight: 500;
+}
+
+.f10-period-meta {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 400;
 }
 
 .f10-table .f10-metric-label {

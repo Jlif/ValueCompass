@@ -16,7 +16,6 @@ import { IndicatorType, calculateMACD, calculateKDJ, calculateRSI } from '../uti
 interface KlineChartProps {
   data: KlineData[];
   height?: number;
-  period?: 'daily' | 'weekly' | 'monthly';
   indicators?: IndicatorType[];
 }
 
@@ -98,17 +97,13 @@ const INDICATOR_DEFS: Record<IndicatorType, IndicatorDef> = {
   },
 };
 
-export function KlineChart({ data, height = 400, period = 'daily', indicators = [] }: KlineChartProps) {
+export function KlineChart({ data, height = 400, indicators = [] }: KlineChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   // 当前活跃副图指标: 指标类型 -> 已创建的 series + tooltip 标签
   const indicatorSeriesRef = useRef<Map<IndicatorType, Array<{ api: ISeriesApi<'Line' | 'Histogram'>; label: string }>>>(new Map());
-  // tickMarkFormatter 闭包读最新周期（chart 只创建一次）
-  const periodRef = useRef(period);
-  periodRef.current = period;
-
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
 
   // Initialize chart
@@ -153,9 +148,9 @@ export function KlineChart({ data, height = 400, period = 'daily', indicators = 
           const dateStr = typeof time === 'string'
             ? time
             : new Date(time * 1000).toISOString().split('T')[0];
-          const [y, m, d] = dateStr.split('-');
-          // 月K带年份，其余只显示月-日
-          return periodRef.current === 'monthly' ? `${y}/${m}` : `${m}/${d}`;
+          const [y, m] = dateStr.split('-');
+          // 横轴统一显示年月，避免跨年 K 线只能看到月-日。
+          return `${y.slice(2)}/${m}`;
         },
       },
       autoSize: true,

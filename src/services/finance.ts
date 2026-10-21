@@ -9,11 +9,24 @@ export interface FinanceDict {
   [period: string]: Record<string, number | null>;
 }
 
-export interface FinanceData {
+export interface FinancePeriodMeta {
+  reportType: string;
+  currency: string;
+  accountingStandard: string;
+  startDate: string;
+}
+
+export interface FinanceTables {
   indicator: FinanceDict;
-  profit: FinanceDict; // 万元
-  balance: FinanceDict; // 万元
-  cashflow: FinanceDict; // 万元
+  profit: FinanceDict;
+  balance: FinanceDict;
+  cashflow: FinanceDict;
+}
+
+export interface FinanceData extends FinanceTables {
+  // 金额单位由具体数据适配器决定；A 股为万元，港股为原始报表币种。
+  periods?: Record<string, FinancePeriodMeta>;
+  periodOrder?: string[];
 }
 
 const isTauri = '__TAURI_INTERNALS__' in window;
@@ -398,7 +411,7 @@ const WAN_TO_YI = (v: number | null) => (v == null ? null : v / 1e4);
 // 分组的指标表定义（顺序对照雪球 F10 参考表格）
 export interface MetricRow {
   label: string;
-  src: keyof FinanceData;
+  src: keyof FinanceTables;
   key: string;
   alt?: string; // 同行第二指标，值以 " / " 拼接展示（构成类指标）
   pct?: boolean;

@@ -5,9 +5,12 @@ import { SyncPanel } from './components/SyncPanel';
 import { GroupManager } from './components/GroupManager';
 import { StockGroupMenu } from './components/StockGroupMenu';
 import { IndustrySelect } from './components/IndustrySelect';
+import { StockQuoteBar } from './components/StockQuoteBar';
 import { useWatchlist } from './hooks/useWatchlist';
+import { useStockQuote } from './hooks/useStockQuote';
 import { fetchIndustryMap, fetchKline, fetchStockList, clearStockListCache, KlinePeriod, IndustryInfo } from './services/tickflow';
 import type { Stock, KlineData } from './types';
+import { getBoardInfo, groupStocksByMarket } from './utils/markets';
 import './App.css';
 
 // 自选 tab 内拖拽股票时的载体（HTML5 DnD 只能存 string）
@@ -15,6 +18,7 @@ const DRAG_MIME = 'application/x-vc-stock';
 
 type Period = KlinePeriod;
 type Tab = 'all' | 'watchlist';
+type Market = 'ALL' | 'CN' | 'HK';
 
 const PERIOD_LABELS: Record<Period, string> = {
   daily: '日K',
@@ -36,7 +40,10 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [industryMap, setIndustryMap] = useState<Record<string, IndustryInfo>>({});
   const [industryFilter, setIndustryFilter] = useState('');
+  const [marketFilter, setMarketFilter] = useState<Market>('ALL');
   const [hideST, setHideST] = useState(true);
+  const [expandedMarkets, setExpandedMarkets] = useState<Set<string>>(() => new Set());
+  const [expandedBoards, setExpandedBoards] = useState<Set<string>>(() => new Set());
   // 自选分组：null = 全部；newGroupName 为 null 关闭输入，'' 打开空输入
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState<string | null>(null);
@@ -61,6 +68,7 @@ function App() {
     forcePush,
     disconnect,
   } = useWatchlist();
+  const { quote, loading: quoteLoading, error: quoteError } = useStockQuote(selectedStock);
 
   const watchlistCodes = useMemo(
     () => new Set(watchlist.map((s) => s.code)),
@@ -126,12 +134,35 @@ function App() {
     // industryFilter 格式 'sw1:食品饮料' / 'sw2:饮料乳品' / 'sw3:乳品'
     const [level, name] = industryFilter ? industryFilter.split(':') : [];
     return stocks.filter((s) => {
-      if (kw && !s.code.includes(kw) && !s.name.includes(kw)) return false;
+      if (marketFilter === 'CN' && s.exchange === 'HK') return false;
+      if (marketFilter === 'HK' && s.exchange !== 'HK') return false;
+      if (kw && !s.code.includes(kw) && !s.name.includes(kw) && !getBoardInfo(s).label.includes(kw)) return false;
       if (hideST && s.name.includes('ST')) return false;
       if (level && industryMap[`${s.code}.${s.exchange}`]?.[level as keyof IndustryInfo] !== name) return false;
       return true;
     });
-  }, [stocks, searchKeyword, hideST, industryFilter, industryMap]);
+  }, [stocks, searchKeyword, hideST, industryFilter, industryMap, marketFilter]);
+
+  const marketGroups = useMemo(() => groupStocksByMarket(displayStocks), [displayStocks]);
+  const forceExpandGroups = searchKeyword.trim().length > 0 || industryFilter.length > 0;
+
+  const toggleMarket = (key: string) => {
+    setExpandedMarkets((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleBoard = (key: string) => {
+    setExpandedBoards((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // 行业层级树：sw1 -> sw2 -> [sw3]
   const industryTree = useMemo(() => {
@@ -192,6 +223,27 @@ function App() {
               <button onClick={() => loadStocks(true)} disabled={refreshing} className="btn-primary">
                 {refreshing ? '刷新中...' : '刷新列表'}
               </button>
+            </div>
+            <div className="market-filter" aria-label="市场筛选">
+              {([
+                ['ALL', '全部市场'],
+                ['CN', 'A股'],
+                ['HK', '港股'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={marketFilter === value ? 'active' : ''}
+                  onClick={() => {
+                    setMarketFilter(value);
+                    if (value === 'HK') setIndustryFilter('');
+                    if (value === 'HK') setExpandedMarkets(new Set(['HK']));
+                    else if (value === 'CN') setExpandedMarkets(new Set(['SH', 'SZ', 'BJ']));
+                    else setExpandedMarkets(new Set());
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="filter-bar">
               <IndustrySelect tree={industryTree} value={industryFilter} onChange={setIndustryFilter} />
@@ -287,34 +339,74 @@ function App() {
                 {!listLoading && displayStocks.length === 0 && (
                   <div className="empty">暂无股票数据，请点击"刷新列表"</div>
                 )}
-                {displayStocks.map((stock) => (
-                  <div
-                    key={stock.code}
-                    className={`stock-item ${selectedStock?.code === stock.code ? 'active' : ''}`}
-                    onClick={() => {
-                      setPeriod('daily');
-                      fetchKlineData(stock, 'daily');
-                    }}
-                  >
-                    <span className="stock-code">{stock.code}</span>
-                    <span className="stock-name">{stock.name}</span>
-                    <span className="stock-exchange">{stock.exchange}</span>
-                    <StockGroupMenu
-                      stock={stock}
-                      groups={groups}
-                      inWatchlist={watchlistCodes.has(stock.code)}
-                      addToWatchlist={addToWatchlist}
-                      addToGroup={addToGroup}
-                    />
-                    <button
-                      className={`watchlist-btn ${watchlistCodes.has(stock.code) ? 'in-watchlist' : ''}`}
-                      onClick={(e) => toggleWatchlist(stock, e)}
-                      title={watchlistCodes.has(stock.code) ? '移除自选' : '添加自选'}
-                    >
-                      {watchlistCodes.has(stock.code) ? '★' : '☆'}
-                    </button>
-                  </div>
-                ))}
+                <div className="market-tree">
+                  {marketGroups.map((market) => {
+                    const marketOpen = forceExpandGroups || expandedMarkets.has(market.key);
+                    return (
+                      <section key={market.key} className="market-group">
+                        <button
+                          className={`market-group-header ${marketOpen ? 'open' : ''}`}
+                          onClick={() => toggleMarket(market.key)}
+                          aria-expanded={marketOpen}
+                        >
+                          <span className="tree-caret">{marketOpen ? '▾' : '▸'}</span>
+                          <span className="market-group-name">{market.label}</span>
+                          <span className="tree-count">{market.count}</span>
+                        </button>
+                        {marketOpen && market.boards.map((board) => {
+                          const boardKey = `${market.key}:${board.key}`;
+                          const boardOpen = forceExpandGroups || expandedBoards.has(boardKey);
+                          return (
+                            <div key={board.key} className="board-group">
+                              <button
+                                className={`board-group-header ${boardOpen ? 'open' : ''}`}
+                                onClick={() => toggleBoard(boardKey)}
+                                aria-expanded={boardOpen}
+                              >
+                                <span className="tree-caret">{boardOpen ? '▾' : '▸'}</span>
+                                <span>{board.label}</span>
+                                <span className="tree-count">{board.stocks.length}</span>
+                              </button>
+                              {boardOpen && board.stocks.map((stock) => (
+                                <div
+                                  key={`${stock.exchange}.${stock.code}`}
+                                  className={`stock-item ${selectedStock?.code === stock.code && selectedStock?.exchange === stock.exchange ? 'active' : ''}`}
+                                  onClick={() => {
+                                    setPeriod('daily');
+                                    fetchKlineData(stock, 'daily');
+                                  }}
+                                >
+                                  <div className="stock-identity">
+                                    <span className="stock-name">{stock.name}</span>
+                                    <div className="stock-meta">
+                                      <span className="stock-code">{stock.code}</span>
+                                      <span className="stock-board">{board.label}</span>
+                                    </div>
+                                  </div>
+                                  <span className={`stock-exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>{stock.exchange}</span>
+                                  <StockGroupMenu
+                                    stock={stock}
+                                    groups={groups}
+                                    inWatchlist={watchlistCodes.has(stock.code)}
+                                    addToWatchlist={addToWatchlist}
+                                    addToGroup={addToGroup}
+                                  />
+                                  <button
+                                    className={`watchlist-btn ${watchlistCodes.has(stock.code) ? 'in-watchlist' : ''}`}
+                                    onClick={(e) => toggleWatchlist(stock, e)}
+                                    title={watchlistCodes.has(stock.code) ? '移除自选' : '添加自选'}
+                                  >
+                                    {watchlistCodes.has(stock.code) ? '★' : '☆'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </section>
+                    );
+                  })}
+                </div>
               </>
             ) : (
               <>
@@ -325,8 +417,8 @@ function App() {
                 )}
                 {groupStocks.map((stock) => (
                   <div
-                    key={stock.code}
-                    className={`stock-item ${selectedStock?.code === stock.code ? 'active' : ''}`}
+                    key={`${stock.exchange}.${stock.code}`}
+                    className={`stock-item ${selectedStock?.code === stock.code && selectedStock?.exchange === stock.exchange ? 'active' : ''}`}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData(DRAG_MIME, stock.code);
@@ -337,9 +429,14 @@ function App() {
                       fetchKlineData(stock, 'daily');
                     }}
                   >
-                    <span className="stock-code">{stock.code}</span>
-                    <span className="stock-name">{stock.name}</span>
-                    <span className="stock-exchange">{stock.exchange}</span>
+                    <div className="stock-identity">
+                      <span className="stock-name">{stock.name}</span>
+                      <div className="stock-meta">
+                        <span className="stock-code">{stock.code}</span>
+                        <span className="stock-board">{getBoardInfo(stock).label}</span>
+                      </div>
+                    </div>
+                    <span className={`stock-exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>{stock.exchange}</span>
                     {activeGroup && (
                       <button
                         className="group-remove-btn"
@@ -378,7 +475,9 @@ function App() {
             <div className="stock-detail">
               <h2>
                 {selectedStock.name}
-                <span className="exchange">{selectedStock.code} · {selectedStock.exchange}</span>
+                <span className={`exchange ${selectedStock.exchange === 'HK' ? 'hk' : ''}`}>
+                  {selectedStock.code} · {selectedStock.exchange === 'HK' ? '港股' : selectedStock.exchange}
+                </span>
                 <button
                   className={`watchlist-btn-large ${watchlistCodes.has(selectedStock.code) ? 'in-watchlist' : ''}`}
                   onClick={(e) => toggleWatchlist(selectedStock, e)}
@@ -386,6 +485,13 @@ function App() {
                   {watchlistCodes.has(selectedStock.code) ? '★ 已自选' : '☆ 加自选'}
                 </button>
               </h2>
+
+              <StockQuoteBar
+                quote={quote}
+                loading={quoteLoading}
+                error={quoteError}
+                exchange={selectedStock.exchange}
+              />
 
               {klineError ? (
                 <div className="kline-error">{klineError}</div>
@@ -415,7 +521,6 @@ function App() {
                   <KlineChart
                     data={klineData}
                     height={480}
-                    period={period}
                   />
                 </div>
               )}
