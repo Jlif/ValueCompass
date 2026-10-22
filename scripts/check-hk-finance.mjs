@@ -1,6 +1,6 @@
 // 验证港股财务适配器：报告期、币种、三表归一化、主要指标和缓存
 // 跑法: npm run check:hk-finance
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,8 +8,12 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const source = readFileSync(join(root, 'src', 'services', 'hkFinance.ts'), 'utf8')
   .replace(/import\.meta\.env\.DEV/g, 'false');
-const tempTs = join(mkdtempSync(join(tmpdir(), 'vc-hk-finance-')), 'hkFinance.ts');
+const tempDir = mkdtempSync(join(tmpdir(), 'vc-hk-finance-'));
+const tempTs = join(tempDir, 'hkFinance.ts');
 writeFileSync(tempTs, source);
+for (const file of ['cache.ts', 'http.ts']) {
+  copyFileSync(join(root, 'src', 'services', file), join(tempDir, file));
+}
 
 const store = new Map();
 globalThis.window = {};

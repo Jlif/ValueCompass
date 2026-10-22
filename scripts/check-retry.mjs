@@ -57,3 +57,18 @@ try {
   assert(String(e).includes('TickFlow 429'), `持续 429 抛出原错误（${e.message.slice(0, 50)}…）`);
 }
 assert(calls === 2, `持续 429 只重试一次（共 ${calls} 次请求）`);
+
+// 3) 429 等待期间取消：应立即中断，不再发第二次请求
+calls = 0;
+const controller = new AbortController();
+const started = Date.now();
+const pending = fetchKline(stock, 'daily', 500, controller.signal);
+setTimeout(() => controller.abort(), 60);
+try {
+  await pending;
+  assert(false, '429 等待期间取消应抛错');
+} catch (e) {
+  assert(e.name === 'AbortError', `取消后抛出 AbortError（${e.name}）`);
+}
+assert(calls === 1, `取消后不再重试（共 ${calls} 次请求）`);
+assert(Date.now() - started < 1000, `取消立即生效（${Date.now() - started}ms）`);

@@ -1,15 +1,21 @@
 // 验证 finance.ts 的缓存逻辑（真实模块）：桩化 localStorage/fetch，统计网络请求数
 // 跑法: npm run check:cache
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const financeSrc = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'services', 'finance.ts');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const financeSrc = join(root, 'src', 'services', 'finance.ts');
 // 把 import.meta.env.DEV 固定为 false，模拟生产构建（缓存开启）
 const src = readFileSync(financeSrc, 'utf8').replace(/import\.meta\.env\.DEV/g, 'false');
-const tmpTs = join(mkdtempSync(join(tmpdir(), 'vc-cache-')), 'finance_prod.ts');
+const tempDir = mkdtempSync(join(tmpdir(), 'vc-cache-'));
+const tmpTs = join(tempDir, 'finance_prod.ts');
 writeFileSync(tmpTs, src);
+// finance.ts 现在复用共享模块，拷贝到同一临时目录才能被 Node 解析
+for (const file of ['cache.ts', 'http.ts']) {
+  copyFileSync(join(root, 'src', 'services', file), join(tempDir, file));
+}
 
 // ---- 桩 ----
 globalThis.window = {};
@@ -52,8 +58,7 @@ assert(JSON.stringify(a) === JSON.stringify(b), '缓存返回值与首次一致'
 // 3) 公司类型缓存：换股票仍省掉探测请求
 calls = 0;
 await fetchFinance({ code: '600519', name: '贵州茅台', exchange: 'SH' });
-// 茅台首探 4 个 + 三表 6 个 + datacenter 1 个 = 11；缓存后应少 3 个探测
-const ctCalls = calls;
+// 首探 4 个 + 三表 5 个 + datacenter 1 个 = 10；缓存后再查应零请求
 calls = 0;
 await fetchFinance({ code: '600519', name: '贵州茅台', exchange: 'SH' });
 assert(calls === 0, '茅台二次同样零请求');

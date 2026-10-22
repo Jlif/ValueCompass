@@ -12,7 +12,8 @@
     "check:retry": "node scripts/check-retry.mjs",
     "check:hk": "node scripts/check-hk.mjs",
     "check:markets": "node scripts/check-markets.mjs",
-    "check:hk-finance": "node scripts/check-hk-finance.mjs"
+    "check:hk-finance": "node scripts/check-hk-finance.mjs",
+    "check:backup": "node scripts/check-backup.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

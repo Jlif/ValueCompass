@@ -11,12 +11,19 @@
 ```
 CLAUDE.md              # 项目专属信息（技术栈、命令、架构）
 src/                   # 前端 React 源码（数据层也在这里）
-├── App.tsx            # 主界面（股票列表 + K线 + F10）
-├── components/        # KlineChart、StockQuoteBar、StockF10 等
-├── hooks/             # useWatchlist（自选/分组）、useStockQuote（实时行情轮询）
+├── App.tsx            # 页面编排（useStockList + useKline + useWatchlist）
+├── theme.ts           # 图表颜色：从 App.css 的 CSS token 读取
+├── components/
+│   ├── Sidebar.tsx    # 搜索/市场/行业筛选、市场树、自选分组
+│   ├── StockDetail.tsx# 股票标题、行情、K线、F10
+│   ├── KlineChart.tsx # lightweight-charts 封装
+│   ├── StockF10.tsx、StockQuoteBar.tsx、SyncPanel.tsx、GroupManager.tsx
+│   ├── StockGroupMenu.tsx、IndustrySelect.tsx
+├── hooks/             # useStockList、useKline、useWatchlist、useStockQuote
 ├── services/          # tickflow（行情）、finance（A 股财务）、hkFinance（港股财务）
-├── types/             # 共享类型
-└── utils/             # 技术指标计算（MACD/KDJ/RSI）
+│                      # gist（云同步）、cache（TTL 缓存）、http（浏览器/Tauri）
+├── types/             # 共享类型（Stock/WatchGroup/SyncState 等）
+└── utils/             # markets、stockKey、periods、indicators、watchlistBackup
 src-tauri/             # Tauri 桌面壳（无业务逻辑）
 ├── Cargo.toml
 └── tauri.conf.json
@@ -33,10 +40,11 @@ vite.config.ts         # 含 /em 代理（东财财务数据，dev 用）
 | `npm run tauri dev` | 启动 Tauri 开发模式（完整应用） |
 | `npm run tauri build` | 构建生产版本 |
 | `npm run check:cache` | 校验财报缓存逻辑（真实模块 + 桩化 fetch，统计请求数） |
-| `npm run check:retry` | 校验 TickFlow 429 限频重试逻辑 |
+| `npm run check:retry` | 校验 TickFlow 429 限频重试与取消逻辑 |
 | `npm run check:hk` | 校验港股股票池、实时行情与 K 线归一化 |
 | `npm run check:markets` | 校验交易所、市场与板块归类 |
 | `npm run check:hk-finance` | 校验港股财报适配器、币种、特殊财年与缓存 |
+| `npm run check:backup` | 校验自选/分组的 JSON 导出、导入与时间戳 |
 
 ## 技术要点
 
@@ -45,6 +53,9 @@ vite.config.ts         # 含 /em 代理（东财财务数据，dev 用）
 - **行情数据源**: TickFlow REST API (https://api.tickflow.org/v1，`x-api-key` 认证，支持 A股、港股股票池、实时行情与 K 线)
 - **财务数据源**: 东方财富 F10 JSON 接口；A 股由 `finance.ts` 处理，港股由 `hkFinance.ts` 处理独立的报告期、币种、会计准则和港股指标组
 - **本地存储**: localStorage（自选列表、股票列表缓存、行业映射、财报缓存）
-- **财报缓存**: TTL 24h、最多 60 只；**开发模式自动旁路**（改代码后刷新即最新数据），仅生产构建启用
+- **自选主键**: `${code}.${exchange}`（如 `600519.SH`）；旧版纯 code 分组在读取/导入时自动迁移
+- **财报缓存**: 共享 `createCache`，TTL 24h；A 股最多 60 只、港股 40 只；**开发模式自动旁路**（改代码后刷新即最新数据），仅生产构建启用
+- **请求取消**: 切换股票/周期时通过 `AbortController` 中止 K 线请求；429 退避等待同样可取消
+- **配色**: 浅色莫兰迪（燕麦纸感，`color-scheme: light`）；`App.css` 顶部 `:root` 定义 token（背景/表面/文字/主色/涨跌/状态），图表从 `theme.ts` 读取同一套 token，避免两套色值
 - **图表库**: lightweight-charts
 - **开发调试**: `npm run dev` 后直接浏览器打开 http://localhost:1420，无需启动 Tauri
