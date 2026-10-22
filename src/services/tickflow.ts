@@ -8,6 +8,30 @@ function apiKey(): string {
   return localStorage.getItem('tickflow_api_key') || DEFAULT_API_KEY;
 }
 
+function abortError(): DOMException {
+  return new DOMException('请求已取消', 'AbortError');
+}
+
+// 可取消的等待：切换股票/周期时，429 退避也应立即中断
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      if (timer) clearTimeout(timer);
+      reject(abortError());
+    };
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function request<T>(
   path: string,
   params?: Record<string, string>,
@@ -31,7 +55,7 @@ async function request<T>(
     const text = await res.text().catch(() => '');
     // ponytail: 封顶 30s，超过就抛错让用户稍后手动重试
     const ms = Math.min(Number(text.match(/请 (\d+)ms 后重试/)?.[1] ?? 5000) + 500, 30500);
-    await new Promise((r) => setTimeout(r, ms));
+    await wait(ms, signal);
     res = await send();
   }
   if (!res.ok) {
@@ -133,14 +157,20 @@ function tsToDate(ts: number, exchange: string): string {
 export async function fetchKline(
   stock: Stock,
   period: KlinePeriod = 'daily',
-  count = 500
+  count = 500,
+  signal?: AbortSignal
 ): Promise<KlineData[]> {
-  const { data } = await request<{ data: KlinesResponse }>('/klines', {
-    symbol: `${stock.code}.${stock.exchange}`,
-    period: PERIOD_MAP[period],
-    count: String(count),
-    adjust: 'forward',
-  });
+  const { data } = await request<{ data: KlinesResponse }>(
+    '/klines',
+    {
+      symbol: `${stock.code}.${stock.exchange}`,
+      period: PERIOD_MAP[period],
+      count: String(count),
+      adjust: 'forward',
+    },
+    undefined,
+    signal
+  );
   return data.timestamp.map((ts, i) => ({
     date: tsToDate(ts, stock.exchange),
     open: data.open[i],

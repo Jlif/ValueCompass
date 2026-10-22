@@ -1,33 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Stock } from '../types';
+import type { Stock, SyncState, WatchGroup } from '../types';
 import { clearSyncConfig, loadSyncConfig, pullWatchlist, pushWatchlist } from '../services/gist';
+import { normalizeGroupCodes, stockKey } from '../utils/stockKey';
 
 // ponytail: 自选列表存 localStorage；配置了 GitHub 同步时，变更防抖上传，启动时拉取合并
 const WATCHLIST_KEY = 'vc_watchlist';
+const GROUPS_KEY = 'vc_watchlist_groups';
 const PUSH_DEBOUNCE = 3000;
 
-export type SyncState = 'off' | 'synced' | 'pulling' | 'pushing' | 'error';
-
-// 分组只是 code 集合，引用 watchlist 里的股票；一个股票可在多个分组
-export interface WatchGroup {
-  id: string;
-  name: string;
-  codes: string[];
+function normalizeStocks(stocks: Stock[]): Stock[] {
+  if (!Array.isArray(stocks)) return [];
+  const seen = new Set<string>();
+  return stocks.filter((stock) => {
+    if (!stock || typeof stock.code !== 'string' || typeof stock.name !== 'string' || typeof stock.exchange !== 'string') {
+      return false;
+    }
+    const key = stockKey(stock);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-const GROUPS_KEY = 'vc_watchlist_groups';
-
-function loadGroups(): WatchGroup[] {
+function load(): Stock[] {
   try {
-    return JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]');
+    return normalizeStocks(JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'));
   } catch {
     return [];
   }
 }
 
-function load(): Stock[] {
+// 旧版分组只存 code，读取时按自选列表补成 `code.exchange`
+function loadGroups(): WatchGroup[] {
   try {
-    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]');
+    const groups = JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]') as WatchGroup[];
+    return normalizeGroupCodes(groups, load());
   } catch {
     return [];
   }
@@ -41,6 +48,8 @@ export function useWatchlist() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   // 跳过 pull 落地后触发的多余 push（内容相同，纯省请求）
   const suppressPushRef = useRef(false);
+  // 上次已同步的内容快照：避免启动/StrictMode 重放时无脑上传一次
+  const syncedPayloadRef = useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
@@ -52,8 +61,15 @@ export function useWatchlist() {
 
   // 本地变更 -> 防抖上传
   useEffect(() => {
+    const payload = JSON.stringify({ watchlist, groups });
+    if (syncedPayloadRef.current === null) {
+      syncedPayloadRef.current = payload;
+      return;
+    }
+    if (syncedPayloadRef.current === payload) return;
     if (suppressPushRef.current) {
       suppressPushRef.current = false;
+      syncedPayloadRef.current = payload;
       return;
     }
     const cfg = loadSyncConfig();
@@ -62,6 +78,7 @@ export function useWatchlist() {
       setSyncState('pushing');
       try {
         await pushWatchlist(cfg, watchlist, groups);
+        syncedPayloadRef.current = payload;
         localStorage.setItem('vc_watchlist_updated', String(Date.now()));
         setSyncState('synced');
         setSyncError(null);
@@ -85,8 +102,8 @@ export function useWatchlist() {
         const localUpdated = Number(localStorage.getItem('vc_watchlist_updated') || 0);
         if (remote.updated > localUpdated) {
           suppressPushRef.current = true;
-          setWatchlist(remote.stocks);
-          setGroups(remote.groups);
+          setWatchlist(normalizeStocks(remote.stocks));
+          setGroups(normalizeGroupCodes(remote.groups, remote.stocks));
         }
       }
       setSyncState('synced');
@@ -105,6 +122,7 @@ export function useWatchlist() {
     setSyncState('pushing');
     try {
       await pushWatchlist(cfg, watchlist, groups);
+      syncedPayloadRef.current = JSON.stringify({ watchlist, groups });
       localStorage.setItem('vc_watchlist_updated', String(Date.now()));
       setSyncState('synced');
       setSyncError(null);
@@ -130,15 +148,29 @@ export function useWatchlist() {
   }, []);
 
   const addToWatchlist = useCallback((stock: Stock) => {
-    setWatchlist((prev) => (prev.some((s) => s.code === stock.code) ? prev : [...prev, stock]));
+    const key = stockKey(stock);
+    setWatchlist((prev) => (prev.some((s) => stockKey(s) === key) ? prev : [...prev, stock]));
   }, []);
 
-  const removeFromWatchlist = useCallback((code: string) => {
-    setWatchlist((prev) => prev.filter((s) => s.code !== code));
-    // 分组里的残留 code 渲染时按 watchlist 过滤，无需清理
+  const removeFromWatchlist = useCallback((key: string) => {
+    setWatchlist((prev) => prev.filter((s) => stockKey(s) !== key));
+    // 分组里的残留 key 渲染时按 watchlist 过滤，无需清理
   }, []);
 
-  const isInWatchlist = useCallback((code: string) => watchlist.some((s) => s.code === code), [watchlist]);
+  const toggleWatchlist = useCallback((stock: Stock) => {
+    const key = stockKey(stock);
+    setWatchlist((prev) =>
+      prev.some((s) => stockKey(s) === key)
+        ? prev.filter((s) => stockKey(s) !== key)
+        : [...prev, stock]
+    );
+  }, []);
+
+  const replaceAll = useCallback((stocks: Stock[], nextGroups: WatchGroup[]) => {
+    const nextStocks = normalizeStocks(stocks);
+    setWatchlist(nextStocks);
+    setGroups(normalizeGroupCodes(nextGroups, nextStocks));
+  }, []);
 
   const createGroup = useCallback((name: string) => {
     setGroups((prev) => [...prev, { id: crypto.randomUUID(), name, codes: [] }]);
@@ -165,18 +197,18 @@ export function useWatchlist() {
     });
   }, []);
 
-  const addToGroup = useCallback((id: string, code: string) => {
+  const addToGroup = useCallback((id: string, key: string) => {
     setGroups((prev) =>
-      prev.map((g) => (g.id === id && !g.codes.includes(code) ? { ...g, codes: [...g.codes, code] } : g))
+      prev.map((g) => (g.id === id && !g.codes.includes(key) ? { ...g, codes: [...g.codes, key] } : g))
     );
   }, []);
 
-  const removeFromGroup = useCallback((id: string, code: string) => {
-    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, codes: g.codes.filter((c) => c !== code) } : g)));
+  const removeFromGroup = useCallback((id: string, key: string) => {
+    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, codes: g.codes.filter((c) => c !== key) } : g)));
   }, []);
 
   return {
-    watchlist, groups, addToWatchlist, removeFromWatchlist, isInWatchlist,
+    watchlist, groups, addToWatchlist, removeFromWatchlist, toggleWatchlist, replaceAll,
     createGroup, removeGroup, renameGroup, moveGroup, addToGroup, removeFromGroup,
     syncState, syncError, lastSyncedAt, pull, forcePush, disconnect,
   };

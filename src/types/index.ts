@@ -15,6 +15,16 @@ export interface KlineData {
   volume: number;
 }
 
+// 自选分组：codes 存 stockKey（`code.exchange`），引用 watchlist 里的股票
+export interface WatchGroup {
+  id: string;
+  name: string;
+  codes: string[];
+}
+
+// Gist 同步状态
+export type SyncState = 'off' | 'synced' | 'pulling' | 'pushing' | 'error';
+
 // 实时行情（TickFlow，A 股和港股共用）
 export interface StockQuote {
   symbol: string;

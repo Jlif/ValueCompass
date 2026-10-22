@@ -25,6 +25,16 @@ const MARKET_INFO: Record<string, { label: string; order: number }> = {
   BJ: { label: '北京', order: 4 },
 };
 
+export function calculateMarketCap(
+  totalShares: number | null | undefined,
+  lastPrice: number | null | undefined
+): number | null {
+  if (totalShares == null || lastPrice == null) return null;
+  if (!Number.isFinite(totalShares) || !Number.isFinite(lastPrice)) return null;
+  if (totalShares <= 0 || lastPrice <= 0) return null;
+  return totalShares * lastPrice;
+}
+
 export function getBoardInfo(stock: Stock): BoardInfo {
   const { code, exchange } = stock;
 

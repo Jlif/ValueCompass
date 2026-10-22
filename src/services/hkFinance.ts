@@ -5,13 +5,13 @@ import type {
   MetricGroup,
   MetricRow,
 } from './finance';
+import { createCache } from './cache.ts';
+import { getJson } from './http.ts';
 
 const DC_HOST = 'https://datacenter.eastmoney.com';
-const DATA_KEY = 'vc.hk_finance.v1';
 const DATA_TTL = 24 * 3600 * 1000;
 const DATA_KEEP = 40;
 const CACHE_ON = !import.meta.env.DEV;
-const isTauri = '__TAURI_INTERNALS__' in window;
 
 const REPORT_LIST_NAME = 'RPT_CUSTOM_HKSK_APPFN_CASHFLOW_SUMMARY';
 const BALANCE_REPORT = 'RPT_HKF10_FN_BALANCE_PC';
@@ -42,19 +42,10 @@ interface HkIndicatorRow {
   [key: string]: number | string | null;
 }
 
-interface CacheEntry {
-  t: number;
-  d: FinanceData;
-}
-
 async function dataCenterJson(params: Record<string, string>): Promise<any> {
   const url = new URL(`${DC_HOST}/securities/api/data/v1/get`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-  const response = isTauri
-    ? await (await import('@tauri-apps/plugin-http')).fetch(url.toString())
-    : await fetch(url.toString());
-  if (!response.ok) throw new Error(`东财港股接口 ${response.status}`);
-  return response.json();
+  return getJson(url.toString(), '东财港股接口');
 }
 
 async function dataRows<T>(params: Record<string, string>): Promise<T[]> {
@@ -125,32 +116,12 @@ async function fetchIndicators(stock: Stock): Promise<HkIndicatorRow[]> {
   });
 }
 
-function readCache(): Record<string, CacheEntry> {
-  try {
-    return JSON.parse(localStorage.getItem(DATA_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function writeCache(all: Record<string, CacheEntry>): void {
-  const now = Date.now();
-  for (const key of Object.keys(all)) {
-    if (now - all[key].t > DATA_TTL) delete all[key];
-  }
-  const keys = Object.keys(all);
-  if (keys.length > DATA_KEEP) {
-    keys
-      .sort((a, b) => all[a].t - all[b].t)
-      .slice(0, keys.length - DATA_KEEP)
-      .forEach((key) => delete all[key]);
-  }
-  try {
-    localStorage.setItem(DATA_KEY, JSON.stringify(all));
-  } catch {
-    localStorage.removeItem(DATA_KEY);
-  }
-}
+const hkFinanceCache = createCache<FinanceData>({
+  key: 'vc.hk_finance.v1',
+  ttl: DATA_TTL,
+  limit: DATA_KEEP,
+  enabled: CACHE_ON,
+});
 
 function itemName(name: string): string {
   return name.trim().replace(/\s+/g, '').replace(/[：:]/g, '').replace(/帐/g, '账');
@@ -441,15 +412,11 @@ async function loadHkFinance(stock: Stock): Promise<FinanceData> {
 }
 
 export async function fetchHkFinance(stock: Stock): Promise<FinanceData> {
-  const cache = CACHE_ON ? readCache() : {};
-  const hit = cache[stock.code];
-  if (hit && Date.now() - hit.t < DATA_TTL) return hit.d;
+  const cached = hkFinanceCache.get(stock.code);
+  if (cached) return cached;
 
   const data = await loadHkFinance(stock);
-  if (CACHE_ON) {
-    cache[stock.code] = { t: Date.now(), d: data };
-    writeCache(cache);
-  }
+  hkFinanceCache.set(stock.code, data);
   return data;
 }
 

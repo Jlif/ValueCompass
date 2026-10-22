@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { fetchIndustryMap, fetchInstrument, Instrument } from '../services/tickflow';
 import { fetchFinance, METRIC_GROUPS, FinanceData, MetricGroup } from '../services/finance';
 import { fetchHkFinance, HK_METRIC_GROUPS } from '../services/hkFinance';
-import type { Stock } from '../types';
+import type { Stock, StockQuote } from '../types';
+import { calculateMarketCap } from '../utils/markets';
 
 interface Props {
   stock: Stock;
+  quote: StockQuote | null;
 }
 
 function fmtNum(v: number | null | undefined, pct?: boolean, decimals = 2): string {
@@ -31,7 +33,7 @@ function currencyLabel(currency?: string): string {
   return currency;
 }
 
-export function StockF10({ stock }: Props) {
+export function StockF10({ stock, quote }: Props) {
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [industry, setIndustry] = useState<string | null>(null);
   const [finance, setFinance] = useState<FinanceData | null>(null);
@@ -90,9 +92,17 @@ export function StockF10({ stock }: Props) {
   const standards = [
     ...new Set(Object.values(finance?.periods ?? {}).map((meta) => meta.accountingStandard)),
   ].filter(Boolean);
+  const marketCap = calculateMarketCap(instrument?.ext.total_shares, quote?.lastPrice);
+  const marketCurrency = stock.exchange === 'HK' ? 'HKD' : 'CNY';
 
   const fmtShares = (v?: number) =>
     v == null ? '-' : `${(v / 1e8).toFixed(2)} 亿股`;
+  const fmtMarketCap = (value: number | null) => {
+    if (value == null) return '-';
+    if (value >= 1e12) return `${(value / 1e12).toFixed(2)} 万亿 ${marketCurrency}`;
+    if (value >= 1e8) return `${(value / 1e8).toFixed(2)} 亿 ${marketCurrency}`;
+    return `${value.toFixed(0)} ${marketCurrency}`;
+  };
 
   return (
     <div className="f10">
@@ -107,6 +117,7 @@ export function StockF10({ stock }: Props) {
               <div className="f10-item"><span className="f10-label">上市日期</span><span className="f10-value">{instrument?.ext.listing_date || '-'}</span></div>
               <div className="f10-item"><span className="f10-label">总股本</span><span className="f10-value">{fmtShares(instrument?.ext.total_shares)}</span></div>
               <div className="f10-item"><span className="f10-label">流通股本</span><span className="f10-value">{fmtShares(instrument?.ext.float_shares)}</span></div>
+              <div className="f10-item"><span className="f10-label">总市值</span><span className="f10-value">{fmtMarketCap(marketCap)}</span></div>
               {isHongKong && (
                 <>
                   <div className="f10-item">

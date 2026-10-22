@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Stock } from '../types';
-import type { WatchGroup } from '../hooks/useWatchlist';
+import type { Stock, WatchGroup } from '../types';
+import { stockKey } from '../utils/stockKey';
 
 interface Props {
   stock: Stock;
@@ -41,7 +41,7 @@ export function StockGroupMenu({ stock, groups, inWatchlist, addToWatchlist, add
   const pick = (gid: string) => {
     // 「全部」tab 里的股票不一定在自选中，分组是自选的子集，先补进自选
     if (!inWatchlist) addToWatchlist(stock);
-    addToGroup(gid, stock.code);
+    addToGroup(gid, stockKey(stock));
     setOpen(false);
   };
 
@@ -63,7 +63,7 @@ export function StockGroupMenu({ stock, groups, inWatchlist, addToWatchlist, add
                   {groups.length === 0 && <div className="sgm-empty">暂无分组，先在自选栏新建</div>}
                   {groups.map((g) => (
                     <button key={g.id} className="sgm-group" onClick={() => pick(g.id)}>
-                      <span className="sgm-check">{g.codes.includes(stock.code) ? '✓' : ''}</span>
+                      <span className="sgm-check">{g.codes.includes(stockKey(stock)) ? '✓' : ''}</span>
                       {g.name}
                     </button>
                   ))}

@@ -12,6 +12,7 @@ import {
 } from 'lightweight-charts';
 import { KlineData } from '../types';
 import { IndicatorType, calculateMACD, calculateKDJ, calculateRSI } from '../utils/indicators';
+import { chartTheme, type ChartTheme } from '../theme';
 
 interface KlineChartProps {
   data: KlineData[];
@@ -46,56 +47,58 @@ interface IndicatorDef {
   compute: (data: KlineData[]) => Record<string, Array<number | undefined>>;
 }
 
-const INDICATOR_DEFS: Record<IndicatorType, IndicatorDef> = {
-  macd: {
-    priceScaleId: 'macd',
-    series: [
-      { key: 'dif', kind: 'line', label: 'DIF', color: '#60a5fa' },
-      { key: 'dea', kind: 'line', label: 'DEA', color: '#fbbf24' },
-      { key: 'macd', kind: 'hist', label: 'MACD' },
-    ],
-    compute: (data) => {
-      const macd = calculateMACD(data);
-      return {
-        dif: macd.map((d) => (Number.isNaN(d.dif) ? undefined : d.dif)),
-        dea: macd.map((d) => (Number.isNaN(d.dea) ? undefined : d.dea)),
-        macd: macd.map((d) => (Number.isNaN(d.macd) ? undefined : d.macd)),
-      };
+function indicatorDefs(theme: ChartTheme): Record<IndicatorType, IndicatorDef> {
+  return {
+    macd: {
+      priceScaleId: 'macd',
+      series: [
+        { key: 'dif', kind: 'line', label: 'DIF', color: theme.primary },
+        { key: 'dea', kind: 'line', label: 'DEA', color: theme.warn },
+        { key: 'macd', kind: 'hist', label: 'MACD' },
+      ],
+      compute: (data) => {
+        const macd = calculateMACD(data);
+        return {
+          dif: macd.map((d) => (Number.isNaN(d.dif) ? undefined : d.dif)),
+          dea: macd.map((d) => (Number.isNaN(d.dea) ? undefined : d.dea)),
+          macd: macd.map((d) => (Number.isNaN(d.macd) ? undefined : d.macd)),
+        };
+      },
     },
-  },
-  kdj: {
-    priceScaleId: 'kdj',
-    series: [
-      { key: 'k', kind: 'line', label: 'K', color: '#60a5fa' },
-      { key: 'd', kind: 'line', label: 'D', color: '#fbbf24' },
-      { key: 'j', kind: 'line', label: 'J', color: '#c084fc' },
-    ],
-    compute: (data) => {
-      const kdj = calculateKDJ(data);
-      return {
-        k: kdj.map((d) => (Number.isNaN(d.k) ? undefined : d.k)),
-        d: kdj.map((d) => (Number.isNaN(d.d) ? undefined : d.d)),
-        j: kdj.map((d) => (Number.isNaN(d.j) ? undefined : d.j)),
-      };
+    kdj: {
+      priceScaleId: 'kdj',
+      series: [
+        { key: 'k', kind: 'line', label: 'K', color: theme.primary },
+        { key: 'd', kind: 'line', label: 'D', color: theme.warn },
+        { key: 'j', kind: 'line', label: 'J', color: theme.accent },
+      ],
+      compute: (data) => {
+        const kdj = calculateKDJ(data);
+        return {
+          k: kdj.map((d) => (Number.isNaN(d.k) ? undefined : d.k)),
+          d: kdj.map((d) => (Number.isNaN(d.d) ? undefined : d.d)),
+          j: kdj.map((d) => (Number.isNaN(d.j) ? undefined : d.j)),
+        };
+      },
     },
-  },
-  rsi: {
-    priceScaleId: 'rsi',
-    series: [
-      { key: 'value', kind: 'line', label: 'RSI', color: '#60a5fa' },
-      { key: 'upper', kind: 'line', label: '80', color: '#f87171', lineStyle: 2, lastValueVisible: false },
-      { key: 'lower', kind: 'line', label: '20', color: '#34d399', lineStyle: 2, lastValueVisible: false },
-    ],
-    compute: (data) => {
-      const rsi = calculateRSI(data);
-      return {
-        value: rsi.map((d) => (Number.isNaN(d.value) ? undefined : d.value)),
-        upper: data.map(() => 80),
-        lower: data.map(() => 20),
-      };
+    rsi: {
+      priceScaleId: 'rsi',
+      series: [
+        { key: 'value', kind: 'line', label: 'RSI', color: theme.primary },
+        { key: 'upper', kind: 'line', label: '80', color: theme.up, lineStyle: 2, lastValueVisible: false },
+        { key: 'lower', kind: 'line', label: '20', color: theme.down, lineStyle: 2, lastValueVisible: false },
+      ],
+      compute: (data) => {
+        const rsi = calculateRSI(data);
+        return {
+          value: rsi.map((d) => (Number.isNaN(d.value) ? undefined : d.value)),
+          upper: data.map(() => 80),
+          lower: data.map(() => 20),
+        };
+      },
     },
-  },
-};
+  };
+}
 
 export function KlineChart({ data, height = 400, indicators = [] }: KlineChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -109,20 +112,21 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
   // Initialize chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
+    const theme = chartTheme();
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { color: '#1e293b' },
-        textColor: '#94a3b8',
+        background: { color: theme.background },
+        textColor: theme.text,
       },
       grid: {
-        vertLines: { color: '#334155' },
-        horzLines: { color: '#334155' },
+        vertLines: { color: theme.grid },
+        horzLines: { color: theme.grid },
       },
       crosshair: {
         mode: 1,
-        vertLine: { color: '#64748b', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
-        horzLine: { color: '#64748b', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
+        vertLine: { color: theme.crosshair, width: 1, style: 2, labelBackgroundColor: theme.crosshairLabel },
+        horzLine: { color: theme.crosshair, width: 1, style: 2, labelBackgroundColor: theme.crosshairLabel },
       },
       localization: {
         // crosshair 悬浮的日期 label，格式 YY/MM/DD
@@ -135,14 +139,14 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
         },
       },
       rightPriceScale: {
-        borderColor: '#334155',
+        borderColor: theme.grid,
         scaleMargins: { top: 0.1, bottom: 0.2 },
       },
       // 滚轮交还给页面滚动（看下面的财务数据），缩放/平移用拖拽和坐标轴
       handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: theme.grid,
         timeVisible: false,
         tickMarkFormatter: (time: string | number) => {
           const dateStr = typeof time === 'string'
@@ -159,16 +163,18 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
     chartRef.current = chart;
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#f87171',
-      downColor: '#34d399',
-      borderVisible: false,
-      wickUpColor: '#f87171',
-      wickDownColor: '#34d399',
+      upColor: theme.up,
+      downColor: theme.down,
+      borderVisible: true,
+      borderUpColor: theme.up,
+      borderDownColor: theme.down,
+      wickUpColor: theme.up,
+      wickDownColor: theme.down,
     });
     candlestickSeriesRef.current = candlestickSeries;
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: '#34d399',
+      color: theme.down,
       priceFormat: { type: 'volume' },
       priceScaleId: '',
     });
@@ -214,6 +220,7 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
   // Update candlestick + volume data
   useEffect(() => {
     if (!candlestickSeriesRef.current || !volumeSeriesRef.current || data.length === 0) return;
+    const theme = chartTheme();
 
     candlestickSeriesRef.current.setData(
       data.map((item) => ({
@@ -228,7 +235,7 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
       data.map((item) => ({
         time: item.date,
         value: item.volume,
-        color: item.close >= item.open ? '#f87171' : '#34d399',
+        color: item.close >= item.open ? theme.up : theme.down,
       }))
     );
     chartRef.current?.timeScale().fitContent();
@@ -250,9 +257,10 @@ export function KlineChart({ data, height = 400, indicators = [] }: KlineChartPr
     }
 
     // 创建新请求的指标并填数
+    const defs = indicatorDefs(chartTheme());
     for (const type of indicators) {
       if (active.has(type)) continue;
-      const def = INDICATOR_DEFS[type];
+      const def = defs[type];
       const values = def.compute(data);
       const times = data.map((d) => d.date);
 

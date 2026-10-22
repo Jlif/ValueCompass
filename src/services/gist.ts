@@ -1,5 +1,4 @@
-import type { Stock } from '../types';
-import type { WatchGroup } from '../hooks/useWatchlist';
+import type { Stock, WatchGroup } from '../types';
 
 // GitHub Gist 云同步：自选列表整包存为一个 secret gist 文件，last-write-wins
 const SYNC_FILE = 'valuecompass-watchlist.json';

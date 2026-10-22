@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WatchGroup } from '../hooks/useWatchlist';
+import type { WatchGroup } from '../types';
 
 interface Props {
   groups: WatchGroup[];
-  watchlistCodes: Set<string>;
+  watchlistKeys: Set<string>;
   createGroup: (name: string) => void;
   renameGroup: (id: string, name: string) => void;
   removeGroup: (id: string) => void;
@@ -11,7 +11,7 @@ interface Props {
 }
 
 // 分组管理面板：拖拽排序、重命名、删除、新建
-export function GroupManager({ groups, watchlistCodes, createGroup, renameGroup, removeGroup, moveGroup }: Props) {
+export function GroupManager({ groups, watchlistKeys, createGroup, renameGroup, removeGroup, moveGroup }: Props) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -88,7 +88,7 @@ export function GroupManager({ groups, watchlistCodes, createGroup, renameGroup,
               ) : (
                 <span className="gm-name">{g.name}</span>
               )}
-              <span className="gm-count">{g.codes.filter((c) => watchlistCodes.has(c)).length} 只</span>
+              <span className="gm-count">{g.codes.filter((c) => watchlistKeys.has(c)).length} 只</span>
               <button
                 className="gm-icon"
                 title="重命名"

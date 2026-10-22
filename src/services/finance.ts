@@ -1,4 +1,6 @@
 import type { Stock } from '../types';
+import { createCache } from './cache.ts';
+import { getJson, isTauriRuntime } from './http.ts';
 
 // 东财 F10 财务数据（akshare 同款数据源，JSON 接口）
 // 三表: Zcfzb(资产负债) / Lrb(利润) / Xjllb(现金流)，单位:元 → 存万元
@@ -29,25 +31,18 @@ export interface FinanceData extends FinanceTables {
   periodOrder?: string[];
 }
 
-const isTauri = '__TAURI_INTERNALS__' in window;
 const EM_HOST = 'https://emweb.securities.eastmoney.com';
 const DC_HOST = 'https://datacenter.eastmoney.com';
 
+// Tauri 下直连（plugin-http 绕过 CORS）；浏览器开发模式走 Vite 的 /em 代理
 async function emJson(path: string): Promise<any> {
-  const res = isTauri
-    ? await (await import('@tauri-apps/plugin-http')).fetch(EM_HOST + path)
-    : await fetch(`/em${path}`);
-  if (!res.ok) throw new Error(`东财接口 ${res.status}`);
-  return res.json();
+  const url = isTauriRuntime() || !import.meta.env.DEV ? EM_HOST + path : `/em${path}`;
+  return getJson(url, '东财接口');
 }
 
 // datacenter 接口自带 CORS 头，浏览器直连无需代理
 async function dcJson(path: string): Promise<any> {
-  const res = isTauri
-    ? await (await import('@tauri-apps/plugin-http')).fetch(DC_HOST + path)
-    : await fetch(DC_HOST + path);
-  if (!res.ok) throw new Error(`东财接口 ${res.status}`);
-  return res.json();
+  return getJson(DC_HOST + path, '东财接口');
 }
 
 function emCode(stock: Stock): string {
@@ -63,42 +58,18 @@ interface EmRow {
 // 开发模式旁路财报缓存：改前端代码后刷新即是最新数据，不会被旧缓存误导。
 // 公司类型缓存不旁路——它永不变化，也没有误导调试的可能。
 const CACHE_ON = !import.meta.env.DEV;
-const DATA_KEY = 'vc.finance.v1';
 const CT_KEY = 'vc.companyType.v1';
 // 东财按公司类型分四套报表（4通用/2保险/3券商/1银行），无类型探测接口，并行取首个有数据的
 const CT_LIST = [4, 2, 3, 1];
 const DATA_TTL = 24 * 3600 * 1000; // 财报季度更新，缓存 1 天
 const DATA_KEEP = 60; // 最多留 60 只，防 localStorage 超限
 
-interface CacheEntry {
-  t: number;
-  d: FinanceData;
-}
-
-function readCache(): Record<string, CacheEntry> {
-  try {
-    return JSON.parse(localStorage.getItem(DATA_KEY) || '{}');
-  } catch {
-    return {}; // 数据损坏直接丢弃
-  }
-}
-
-function writeCache(all: Record<string, CacheEntry>): void {
-  const now = Date.now();
-  for (const k of Object.keys(all)) if (now - all[k].t > DATA_TTL) delete all[k];
-  const keys = Object.keys(all);
-  if (keys.length > DATA_KEEP) {
-    keys
-      .sort((a, b) => all[a].t - all[b].t)
-      .slice(0, keys.length - DATA_KEEP)
-      .forEach((k) => delete all[k]);
-  }
-  try {
-    localStorage.setItem(DATA_KEY, JSON.stringify(all));
-  } catch {
-    localStorage.removeItem(DATA_KEY); // ponytail: 超限就清空重来，不做精细淘汰
-  }
-}
+const financeCache = createCache<FinanceData>({
+  key: 'vc.finance.v1',
+  ttl: DATA_TTL,
+  limit: DATA_KEEP,
+  enabled: CACHE_ON,
+});
 
 function readCt(code: string): number | null {
   const v = Number(localStorage.getItem(`${CT_KEY}.${code}`));
@@ -235,9 +206,8 @@ function mapOne(row: EmRow, map: Record<string, FieldSpec>, toWan: boolean): Rec
 
 // F10 显示 5 年报 + 2 半年报（以指标接口实际披露为准）；三表多拉兜底
 export async function fetchFinance(stock: Stock): Promise<FinanceData> {
-  const all = CACHE_ON ? readCache() : {};
-  const hit = all[stock.code];
-  if (hit && Date.now() - hit.t < DATA_TTL) return hit.d;
+  const cached = financeCache.get(stock.code);
+  if (cached) return cached;
 
   const thisYear = new Date().getFullYear();
   const periods = [
@@ -280,10 +250,7 @@ export async function fetchFinance(stock: Stock): Promise<FinanceData> {
     data.profit[p] = { ...data.profit[p], ...mapOne(r, ZYZB_PROFIT, false) };
   }
   deriveMetrics(data);
-  if (CACHE_ON) {
-    all[stock.code] = { t: Date.now(), d: data };
-    writeCache(all);
-  }
+  financeCache.set(stock.code, data);
   return data;
 }
 
