@@ -13,7 +13,8 @@
     "check:hk": "node scripts/check-hk.mjs",
     "check:markets": "node scripts/check-markets.mjs",
     "check:hk-finance": "node scripts/check-hk-finance.mjs",
-    "check:backup": "node scripts/check-backup.mjs"
+    "check:backup": "node scripts/check-backup.mjs",
+    "check:gist": "node --experimental-strip-types --no-warnings scripts/check-gist.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

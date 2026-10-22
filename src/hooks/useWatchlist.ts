@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stock, SyncState, WatchGroup } from '../types';
-import { clearSyncConfig, loadSyncConfig, pullWatchlist, pushWatchlist } from '../services/gist';
+import {
+  clearSyncConfig,
+  loadSyncConfig,
+  pullWatchlistWithRecovery,
+  pushWatchlist,
+} from '../services/gist';
 import { normalizeGroupCodes, stockKey } from '../utils/stockKey';
 
 // ponytail: 自选列表存 localStorage；配置了 GitHub 同步时，变更防抖上传，启动时拉取合并
@@ -97,9 +102,13 @@ export function useWatchlist() {
     if (!cfg) return;
     setSyncState('pulling');
     try {
-      const remote = await pullWatchlist(cfg);
+      const localUpdated = Number(localStorage.getItem('vc_watchlist_updated') || 0);
+      const result = await pullWatchlistWithRecovery(cfg, {
+        localUpdated,
+        hasLocalData: load().length > 0 || loadGroups().length > 0,
+      });
+      const remote = result.snapshot;
       if (remote) {
-        const localUpdated = Number(localStorage.getItem('vc_watchlist_updated') || 0);
         if (remote.updated > localUpdated) {
           suppressPushRef.current = true;
           setWatchlist(normalizeStocks(remote.stocks));
