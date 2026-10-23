@@ -14,9 +14,9 @@
     "check:markets": "node scripts/check-markets.mjs",
     "check:hk-finance": "node scripts/check-hk-finance.mjs",
     "check:backup": "node scripts/check-backup.mjs",
-    "check:gist": "node --experimental-strip-types --no-warnings scripts/check-gist.mjs",
     "check:notes": "node --experimental-strip-types --no-warnings scripts/check-notes.mjs",
-    "check:s3": "node --experimental-strip-types --no-warnings scripts/check-s3.mjs"
+    "check:s3": "node --experimental-strip-types --no-warnings scripts/check-s3.mjs",
+    "check:watchlist-sync": "node --experimental-strip-types --no-warnings scripts/check-watchlist-sync.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -15,19 +15,29 @@ export interface StockNote {
   deletedAt: number | null;
 }
 
-// 笔记同步：S3 兼容对象存储（阿里云 OSS / 腾讯云 COS / 自定义）
+// 远端同步：S3 兼容对象存储（阿里云 OSS / 腾讯云 COS / 自定义）
 export type S3Provider = 'aliyun' | 'tencent' | 'custom';
 
-export interface NotesSyncConfig {
+export interface S3ConnectionConfig {
   provider: S3Provider;
   endpoint: string;
   region: string;
   bucket: string;
-  key: string;
   accessKeyId: string;
   secretAccessKey: string;
   forcePathStyle: boolean;
   conditionalWrites: boolean;
+}
+
+// 自选与笔记共用连接，分别写入不同对象。
+export interface ObjectSyncConfig extends S3ConnectionConfig {
+  watchlistKey: string;
+  notesKey: string;
+}
+
+// 兼容旧版笔记同步配置迁移。
+export interface NotesSyncConfig extends S3ConnectionConfig {
+  key: string;
 }
 
 // K线数据
@@ -47,7 +57,7 @@ export interface WatchGroup {
   codes: string[];
 }
 
-// Gist 同步状态
+// 远端同步状态
 export type SyncState = 'off' | 'synced' | 'pulling' | 'pushing' | 'error';
 
 // 实时行情（TickFlow，A 股和港股共用）

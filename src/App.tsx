@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { NotesSyncPanel } from './components/NotesSyncPanel';
 import { Sidebar } from './components/Sidebar';
 import { StockDetail } from './components/StockDetail';
 import { SyncPanel } from './components/SyncPanel';
 import { useKline } from './hooks/useKline';
 import { useNotesSync } from './hooks/useNotesSync';
+import { useS3SyncSettings } from './hooks/useS3SyncSettings';
 import { useStockList } from './hooks/useStockList';
 import { useStockQuote } from './hooks/useStockQuote';
 import { useWatchlist } from './hooks/useWatchlist';
@@ -12,6 +12,7 @@ import { stockKey } from './utils/stockKey';
 import './App.css';
 
 function App() {
+  const syncSettings = useS3SyncSettings();
   const { stocks, industryMap, loading: listLoading, refreshing, error: listError, refresh } = useStockList();
   const {
     stock: selectedStock,
@@ -38,11 +39,10 @@ function App() {
     syncState,
     syncError,
     lastSyncedAt,
-    pull,
+    syncNow,
     forcePush,
-    disconnect,
-  } = useWatchlist();
-  const notesSync = useNotesSync();
+  } = useWatchlist({ config: syncSettings.config });
+  const notesSync = useNotesSync({ config: syncSettings.config });
   const { quote, loading: quoteLoading, error: quoteError } = useStockQuote(selectedStock);
 
   const watchlistKeys = useMemo(() => new Set(watchlist.map((stock) => stockKey(stock))), [watchlist]);
@@ -53,15 +53,10 @@ function App() {
       <header className="app-header">
         <h1>价值罗盘</h1>
         <div className="status-bar">
-          <span>数据源: TickFlow</span>
-          <NotesSyncPanel {...notesSync} />
           <SyncPanel
-            syncState={syncState}
-            syncError={syncError}
-            lastSyncedAt={lastSyncedAt}
-            pull={pull}
-            forcePush={forcePush}
-            disconnect={disconnect}
+            settings={syncSettings}
+            watchlistSync={{ syncState, syncError, lastSyncedAt, syncNow, forcePush }}
+            notesSync={notesSync}
             watchlist={watchlist}
             groups={groups}
             replaceAll={replaceAll}

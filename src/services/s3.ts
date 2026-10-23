@@ -1,5 +1,10 @@
 import { AwsClient } from 'aws4fetch';
-import type { NotesSyncConfig, S3Provider } from '../types';
+import type {
+  NotesSyncConfig,
+  ObjectSyncConfig,
+  S3ConnectionConfig,
+  S3Provider,
+} from '../types';
 import { request } from './http.ts';
 
 // S3 兼容对象存储：阿里云 OSS / 腾讯云 COS / 自定义。
@@ -7,6 +12,7 @@ import { request } from './http.ts';
 // 注意：这里只支持 S3 兼容签名，不支持 OSS/COS 原生签名。
 
 export const NOTES_OBJECT_KEY = 'valuecompass/notes.json';
+export const WATCHLIST_OBJECT_KEY = 'valuecompass/watchlist.json';
 
 export interface S3ProviderPreset {
   label: string;
@@ -40,6 +46,56 @@ export const S3_PROVIDER_PRESETS: Record<S3Provider, S3ProviderPreset> = {
   },
 };
 
+export interface ParsedS3Endpoint {
+  provider?: S3Provider;
+  region?: string;
+  bucket?: string;
+  forcePathStyle?: boolean;
+}
+
+// 从常见 S3 兼容 Endpoint 中识别 Bucket 与 Region。
+// 支持带 Bucket 的虚拟主机形式，以及不带 Bucket 的 Path-style 服务端点。
+export function parseS3Endpoint(endpoint: string): ParsedS3Endpoint {
+  let url: URL;
+  try {
+    url = new URL(endpoint.trim());
+  } catch {
+    return {};
+  }
+  const host = url.hostname.toLowerCase();
+
+  const tencent = host.match(/^(?:(.+)\.)?cos\.([^.]+)\.myqcloud\.com$/);
+  if (tencent) {
+    return {
+      provider: 'tencent',
+      ...(tencent[1] ? { bucket: tencent[1] } : {}),
+      region: tencent[2],
+      forcePathStyle: !tencent[1],
+    };
+  }
+
+  const aliyunS3 = host.match(/^s3\.(oss-[^.]+)\.aliyuncs\.com$/);
+  if (aliyunS3) {
+    return {
+      provider: 'aliyun',
+      region: aliyunS3[1],
+      forcePathStyle: true,
+    };
+  }
+
+  const aliyun = host.match(/^(?:(.+)\.)?(oss-[^.]+)\.aliyuncs\.com$/);
+  if (aliyun) {
+    return {
+      provider: 'aliyun',
+      ...(aliyun[1] ? { bucket: aliyun[1] } : {}),
+      region: aliyun[2],
+      forcePathStyle: !aliyun[1],
+    };
+  }
+
+  return {};
+}
+
 export interface S3Object {
   text: string;
   etag: string | null;
@@ -52,7 +108,7 @@ export interface S3ObjectResult {
 }
 
 export class S3ConflictError extends Error {
-  constructor(message = '远端笔记已被其他设备更新') {
+  constructor(message = '远端数据已被其他设备更新') {
     super(message);
     this.name = 'S3ConflictError';
   }
@@ -68,7 +124,7 @@ export class S3HttpError extends Error {
   }
 }
 
-export function validateNotesSyncConfig(config: NotesSyncConfig): string | null {
+export function validateS3ConnectionConfig(config: S3ConnectionConfig): string | null {
   if (!config.endpoint.trim()) return '请填写 Endpoint';
   try {
     const url = new URL(config.endpoint);
@@ -85,29 +141,80 @@ export function validateNotesSyncConfig(config: NotesSyncConfig): string | null 
   }
   if (!config.region.trim()) return '请填写 Region';
   if (!config.bucket.trim()) return '请填写 Bucket';
-  if (!config.key.trim()) return '请填写对象 Key';
   if (!config.accessKeyId.trim()) return '请填写 AccessKey ID';
   if (!config.secretAccessKey.trim()) return '请填写 AccessKey Secret';
   return null;
 }
 
-export function normalizeNotesSyncConfig(value: unknown): NotesSyncConfig | null {
+export function normalizeS3ConnectionConfig(value: unknown): S3ConnectionConfig | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const provider: S3Provider =
     raw.provider === 'aliyun' || raw.provider === 'tencent' ? raw.provider : 'custom';
-  const config: NotesSyncConfig = {
+  const config: S3ConnectionConfig = {
     provider,
     endpoint: typeof raw.endpoint === 'string' ? raw.endpoint.trim() : '',
     region: typeof raw.region === 'string' ? raw.region.trim() : '',
     bucket: typeof raw.bucket === 'string' ? raw.bucket.trim() : '',
-    key: typeof raw.key === 'string' ? raw.key.trim() : NOTES_OBJECT_KEY,
     accessKeyId: typeof raw.accessKeyId === 'string' ? raw.accessKeyId.trim() : '',
     secretAccessKey: typeof raw.secretAccessKey === 'string' ? raw.secretAccessKey : '',
     forcePathStyle: raw.forcePathStyle === true,
     conditionalWrites: raw.conditionalWrites !== false,
   };
+  return validateS3ConnectionConfig(config) ? null : config;
+}
+
+export function validateNotesSyncConfig(config: NotesSyncConfig): string | null {
+  return validateS3ConnectionConfig(config) || (!config.key.trim() ? '请填写对象 Key' : null);
+}
+
+export function normalizeNotesSyncConfig(value: unknown): NotesSyncConfig | null {
+  const connection = normalizeS3ConnectionConfig(value);
+  if (!connection) return null;
+  const raw = value as Record<string, unknown>;
+  const config: NotesSyncConfig = {
+    ...connection,
+    key: typeof raw.key === 'string' && raw.key.trim() ? raw.key.trim() : NOTES_OBJECT_KEY,
+  };
   return validateNotesSyncConfig(config) ? null : config;
+}
+
+export function defaultObjectSyncConfig(provider: S3Provider = 'aliyun'): ObjectSyncConfig {
+  const preset = S3_PROVIDER_PRESETS[provider];
+  return {
+    provider,
+    endpoint: preset.endpoint,
+    region: preset.region,
+    bucket: '',
+    accessKeyId: '',
+    secretAccessKey: '',
+    forcePathStyle: preset.forcePathStyle,
+    conditionalWrites: preset.conditionalWrites,
+    watchlistKey: WATCHLIST_OBJECT_KEY,
+    notesKey: NOTES_OBJECT_KEY,
+  };
+}
+
+export function normalizeObjectSyncConfig(value: unknown): ObjectSyncConfig | null {
+  const connection = normalizeS3ConnectionConfig(value);
+  if (!connection) return null;
+  const raw = value as Record<string, unknown>;
+  const config: ObjectSyncConfig = {
+    ...connection,
+    watchlistKey:
+      typeof raw.watchlistKey === 'string' && raw.watchlistKey.trim()
+        ? raw.watchlistKey.trim()
+        : WATCHLIST_OBJECT_KEY,
+    notesKey:
+      typeof raw.notesKey === 'string' && raw.notesKey.trim()
+        ? raw.notesKey.trim()
+        : NOTES_OBJECT_KEY,
+  };
+  return config.watchlistKey && config.notesKey ? config : null;
+}
+
+export function withObjectKey(config: S3ConnectionConfig, key: string): NotesSyncConfig {
+  return { ...config, key };
 }
 
 export function buildObjectUrl(config: NotesSyncConfig, key = config.key): URL {
@@ -120,7 +227,12 @@ export function buildObjectUrl(config: NotesSyncConfig, key = config.key): URL {
   if (config.forcePathStyle) {
     endpoint.pathname = `${basePath}/${bucket}/${encodedKey}`;
   } else {
-    endpoint.hostname = `${config.bucket.trim()}.${endpoint.hostname}`;
+    const lowerBucket = config.bucket.trim().toLowerCase();
+    const lowerHost = endpoint.hostname.toLowerCase();
+    // 腾讯云/阿里云虚拟主机 Endpoint 往往已经包含 Bucket，避免重复拼接。
+    if (!lowerHost.startsWith(`${lowerBucket}.`)) {
+      endpoint.hostname = `${config.bucket.trim()}.${endpoint.hostname}`;
+    }
     endpoint.pathname = `${basePath}/${encodedKey}`;
   }
   endpoint.search = '';

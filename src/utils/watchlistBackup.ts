@@ -100,7 +100,7 @@ export function parseWatchlistBackup(text: string): { watchlist: Stock[]; groups
   if (!parsed || typeof parsed !== 'object') throw new Error('JSON 结构无效');
 
   const root = parsed as Record<string, unknown>;
-  // 同时兼容本应用导出格式和 GitHub Gist 同步文件中的 stocks 字段。
+  // 同时兼容本应用导出格式和旧同步文件中的 stocks 字段。
   const stockValue = root.watchlist ?? root.stocks;
   const watchlist = cleanStocks(stockValue);
   return {

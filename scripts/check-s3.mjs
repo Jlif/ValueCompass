@@ -8,6 +8,7 @@ const {
   buildObjectUrl,
   getNotesObject,
   normalizeNotesSyncConfig,
+  parseS3Endpoint,
   putNotesObject,
   signS3Request,
   S3ConflictError,
@@ -39,6 +40,16 @@ assert(
   'Virtual-hosted URL 正确'
 );
 assert(
+  buildObjectUrl({
+    ...base,
+    endpoint: 'https://common-1252800375.cos.ap-shanghai.myqcloud.com',
+    bucket: 'common-1252800375',
+    forcePathStyle: false,
+  }).toString() ===
+    'https://common-1252800375.cos.ap-shanghai.myqcloud.com/valuecompass/notes.json',
+  'Endpoint 已含 Bucket 时不会重复拼接'
+);
+assert(
   buildObjectUrl({ ...base, endpoint: 'https://example.com/s3' }).toString() ===
     'https://example.com/s3/my-bucket/valuecompass/notes.json',
   'Endpoint 路径前缀保留'
@@ -54,6 +65,41 @@ assert(validateNotesSyncConfig({ ...allowedBase, endpoint: 'https://example.com'
 assert(normalizeNotesSyncConfig({ ...allowedBase, provider: 'aliyun' })?.provider === 'aliyun', '配置归一化保留服务商');
 assert(Boolean(S3_PROVIDER_PRESETS.aliyun.endpoint.includes('aliyuncs.com')), '阿里云预设存在');
 assert(Boolean(S3_PROVIDER_PRESETS.tencent.endpoint.includes('myqcloud.com')), '腾讯云预设存在');
+
+assert(
+  JSON.stringify(parseS3Endpoint('https://common-1252800375.cos.ap-shanghai.myqcloud.com')) ===
+    JSON.stringify({
+      provider: 'tencent',
+      bucket: 'common-1252800375',
+      region: 'ap-shanghai',
+      forcePathStyle: false,
+    }),
+  '腾讯云虚拟主机 Endpoint 自动识别 Region 与 Bucket'
+);
+assert(
+  JSON.stringify(parseS3Endpoint('https://cos.ap-guangzhou.myqcloud.com')) ===
+    JSON.stringify({ provider: 'tencent', region: 'ap-guangzhou', forcePathStyle: true }),
+  '腾讯云 Path-style Endpoint 自动识别 Region'
+);
+assert(
+  JSON.stringify(parseS3Endpoint('https://s3.oss-cn-hangzhou.aliyuncs.com')) ===
+    JSON.stringify({ provider: 'aliyun', region: 'oss-cn-hangzhou', forcePathStyle: true }),
+  '阿里云 S3 Endpoint 自动识别 Region'
+);
+assert(
+  JSON.stringify(parseS3Endpoint('https://my-bucket.oss-cn-hangzhou.aliyuncs.com')) ===
+    JSON.stringify({
+      provider: 'aliyun',
+      bucket: 'my-bucket',
+      region: 'oss-cn-hangzhou',
+      forcePathStyle: false,
+    }),
+  '阿里云虚拟主机 Endpoint 自动识别 Region 与 Bucket'
+);
+assert(
+  Object.keys(parseS3Endpoint('https://example.com')).length === 0,
+  '未知 Endpoint 不会误填 Region 与 Bucket'
+);
 
 const signed = await signS3Request(base, 'PUT', '{"schemaVersion":1}', { 'if-match': '"abc"' });
 assert(signed.headers.authorization.startsWith('AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/'), '签名头使用 SigV4 与 AccessKey');

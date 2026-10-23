@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Stock, SyncState, WatchGroup } from '../types';
+import type { ObjectSyncConfig, Stock, SyncState, WatchGroup } from '../types';
+import { S3ConflictError } from '../services/s3';
 import {
-  clearSyncConfig,
-  loadSyncConfig,
-  pullWatchlistWithRecovery,
-  pushWatchlist,
-} from '../services/gist';
+  createWatchlistSyncSnapshot,
+  readWatchlistSnapshot,
+  WATCHLIST_SYNC_UPDATED_KEY,
+  writeWatchlistSnapshot,
+  type WatchlistSyncSnapshot,
+} from '../services/watchlistSync';
 import { normalizeGroupCodes, stockKey } from '../utils/stockKey';
 
-// ponytail: 自选列表存 localStorage；配置了 GitHub 同步时，变更防抖上传，启动时拉取合并
 const WATCHLIST_KEY = 'vc_watchlist';
 const GROUPS_KEY = 'vc_watchlist_groups';
+const LAST_SYNC_KEY = 'vc_watchlist_last_synced';
 const PUSH_DEBOUNCE = 3000;
 
 function normalizeStocks(stocks: Stock[]): Stock[] {
@@ -45,16 +47,33 @@ function loadGroups(): WatchGroup[] {
   }
 }
 
-export function useWatchlist() {
+function localPayload(stocks: Stock[], groups: WatchGroup[]): string {
+  return JSON.stringify({ stocks, groups });
+}
+
+interface Options {
+  config: ObjectSyncConfig | null;
+}
+
+export function useWatchlist({ config }: Options) {
   const [watchlist, setWatchlist] = useState<Stock[]>(load);
   const [groups, setGroups] = useState<WatchGroup[]>(loadGroups);
-  const [syncState, setSyncState] = useState<SyncState>(loadSyncConfig() ? 'synced' : 'off');
+  const [syncState, setSyncState] = useState<SyncState>(config ? 'synced' : 'off');
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  // 跳过 pull 落地后触发的多余 push（内容相同，纯省请求）
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    const value = Number(localStorage.getItem(LAST_SYNC_KEY));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
+  const configRef = useRef(config);
+  const watchlistRef = useRef(watchlist);
+  const groupsRef = useRef(groups);
+  const syncedPayloadRef = useRef<string | null>(localPayload(watchlist, groups));
   const suppressPushRef = useRef(false);
-  // 上次已同步的内容快照：避免启动/StrictMode 重放时无脑上传一次
-  const syncedPayloadRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+
+  watchlistRef.current = watchlist;
+  groupsRef.current = groups;
 
   useEffect(() => {
     localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
@@ -64,9 +83,100 @@ export function useWatchlist() {
     localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
   }, [groups]);
 
-  // 本地变更 -> 防抖上传
+  const applyRemote = useCallback((snapshot: WatchlistSyncSnapshot) => {
+    const nextStocks = normalizeStocks(snapshot.stocks);
+    const nextGroups = normalizeGroupCodes(snapshot.groups, nextStocks);
+    suppressPushRef.current = true;
+    setWatchlist(nextStocks);
+    setGroups(nextGroups);
+    localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(snapshot.updatedAt));
+    syncedPayloadRef.current = localPayload(nextStocks, nextGroups);
+  }, []);
+
+  const doSync = useCallback(async () => {
+    const current = configRef.current;
+    if (!current) return;
+    setSyncState('pulling');
+    setSyncError(null);
+    try {
+      const localUpdated = Number(localStorage.getItem(WATCHLIST_SYNC_UPDATED_KEY) || 0);
+      const stocks = watchlistRef.current;
+      const groupsNow = groupsRef.current;
+      const hasLocalData = stocks.length > 0 || groupsNow.length > 0;
+      const localDirty = syncedPayloadRef.current !== localPayload(stocks, groupsNow);
+      let remote = await readWatchlistSnapshot(current, current.watchlistKey);
+      const remoteMatchesLocal = Boolean(
+        remote.snapshot &&
+        localPayload(stocks, groupsNow) ===
+          localPayload(remote.snapshot.stocks, remote.snapshot.groups)
+      );
+
+      if (remote.snapshot && remote.snapshot.updatedAt > localUpdated) {
+        applyRemote(remote.snapshot);
+      } else if (remote.snapshot && remoteMatchesLocal && !localDirty) {
+        localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(remote.snapshot.updatedAt));
+      } else if (remote.snapshot || hasLocalData || localDirty) {
+        const snapshot = createWatchlistSyncSnapshot(
+          stocks,
+          groupsNow,
+          Math.max(Date.now(), (remote.snapshot?.updatedAt ?? 0) + 1)
+        );
+        setSyncState('pushing');
+        try {
+          await writeWatchlistSnapshot(current, current.watchlistKey, snapshot, remote.etag);
+          localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(snapshot.updatedAt));
+          syncedPayloadRef.current = localPayload(stocks, groupsNow);
+        } catch (error) {
+          if (!(error instanceof S3ConflictError)) throw error;
+          remote = await readWatchlistSnapshot(current, current.watchlistKey);
+          if (remote.snapshot && remote.snapshot.updatedAt > snapshot.updatedAt) {
+            applyRemote(remote.snapshot);
+          } else {
+            const retry = createWatchlistSyncSnapshot(
+              stocks,
+              groupsNow,
+              Math.max(Date.now(), (remote.snapshot?.updatedAt ?? 0) + 1)
+            );
+            await writeWatchlistSnapshot(current, current.watchlistKey, retry, remote.etag);
+            localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(retry.updatedAt));
+            syncedPayloadRef.current = localPayload(stocks, groupsNow);
+          }
+        }
+      }
+
+      if (configRef.current !== current) return;
+      const syncedAt = Date.now();
+      localStorage.setItem(LAST_SYNC_KEY, String(syncedAt));
+      setLastSyncedAt(syncedAt);
+      setSyncState('synced');
+      setSyncError(null);
+    } catch (error) {
+      if (configRef.current !== current) return;
+      setSyncState('error');
+      setSyncError(error instanceof Error ? error.message : String(error));
+    }
+  }, [applyRemote]);
+
+  const enqueueSync = useCallback(() => {
+    const run = () => doSync();
+    queueRef.current = queueRef.current.then(run, run);
+    return queueRef.current;
+  }, [doSync]);
+
   useEffect(() => {
-    const payload = JSON.stringify({ watchlist, groups });
+    configRef.current = config;
+    if (!config) {
+      setSyncState('off');
+      setSyncError(null);
+      return;
+    }
+    setSyncState('synced');
+    void enqueueSync();
+  }, [config, enqueueSync]);
+
+  // 本地变更 -> 标记更新时间并防抖同步。
+  useEffect(() => {
+    const payload = localPayload(watchlist, groups);
     if (syncedPayloadRef.current === null) {
       syncedPayloadRef.current = payload;
       return;
@@ -77,83 +187,51 @@ export function useWatchlist() {
       syncedPayloadRef.current = payload;
       return;
     }
-    const cfg = loadSyncConfig();
-    if (!cfg) return;
-    const timer = setTimeout(async () => {
-      setSyncState('pushing');
-      try {
-        await pushWatchlist(cfg, watchlist, groups);
-        syncedPayloadRef.current = payload;
-        localStorage.setItem('vc_watchlist_updated', String(Date.now()));
-        setSyncState('synced');
-        setSyncError(null);
-        setLastSyncedAt(Date.now());
-      } catch (e) {
-        setSyncState('error');
-        setSyncError(e instanceof Error ? e.message : String(e));
-      }
-    }, PUSH_DEBOUNCE);
-    return () => clearTimeout(timer);
-  }, [watchlist, groups]);
-
-  // 启动时拉取远端，与本地按更新时间取新的一方
-  const pull = useCallback(async () => {
-    const cfg = loadSyncConfig();
-    if (!cfg) return;
-    setSyncState('pulling');
-    try {
-      const localUpdated = Number(localStorage.getItem('vc_watchlist_updated') || 0);
-      const result = await pullWatchlistWithRecovery(cfg, {
-        localUpdated,
-        hasLocalData: load().length > 0 || loadGroups().length > 0,
-      });
-      const remote = result.snapshot;
-      if (remote) {
-        if (remote.updated > localUpdated) {
-          suppressPushRef.current = true;
-          setWatchlist(normalizeStocks(remote.stocks));
-          setGroups(normalizeGroupCodes(remote.groups, remote.stocks));
-        }
-      }
-      setSyncState('synced');
-      setSyncError(null);
-      setLastSyncedAt(Date.now());
-    } catch (e) {
-      setSyncState('error');
-      setSyncError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
-  // 手动上传本地（以本地为准强制覆盖远端）
-  const forcePush = useCallback(async () => {
-    const cfg = loadSyncConfig();
-    if (!cfg) return;
-    setSyncState('pushing');
-    try {
-      await pushWatchlist(cfg, watchlist, groups);
-      syncedPayloadRef.current = JSON.stringify({ watchlist, groups });
-      localStorage.setItem('vc_watchlist_updated', String(Date.now()));
-      setSyncState('synced');
-      setSyncError(null);
-      setLastSyncedAt(Date.now());
-    } catch (e) {
-      setSyncState('error');
-      setSyncError(e instanceof Error ? e.message : String(e));
-    }
-  }, [watchlist, groups]);
-
-  // 断开同步：清配置并把状态复位，否则按钮还挂着上一次的「已同步」
-  const disconnect = useCallback(() => {
-    clearSyncConfig();
-    setSyncState('off');
-    setSyncError(null);
-    setLastSyncedAt(null);
-  }, []);
+    localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(Date.now()));
+    if (!configRef.current) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => void enqueueSync(), PUSH_DEBOUNCE);
+  }, [watchlist, groups, enqueueSync]);
 
   useEffect(() => {
-    pull();
-    // 仅启动时拉取一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!config) return;
+    const timer = setInterval(() => void enqueueSync(), 60_000);
+    const onFocus = () => void enqueueSync();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [config, enqueueSync]);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const syncNow = useCallback(() => enqueueSync(), [enqueueSync]);
+
+  const forcePush = useCallback(async () => {
+    const current = configRef.current;
+    if (!current) return;
+    setSyncState('pushing');
+    try {
+      const snapshot = createWatchlistSyncSnapshot(
+        watchlistRef.current,
+        groupsRef.current,
+        Date.now()
+      );
+      await writeWatchlistSnapshot(current, current.watchlistKey, snapshot);
+      localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(snapshot.updatedAt));
+      syncedPayloadRef.current = localPayload(watchlistRef.current, groupsRef.current);
+      const syncedAt = Date.now();
+      localStorage.setItem(LAST_SYNC_KEY, String(syncedAt));
+      setLastSyncedAt(syncedAt);
+      setSyncState('synced');
+      setSyncError(null);
+    } catch (error) {
+      setSyncState('error');
+      setSyncError(error instanceof Error ? error.message : String(error));
+    }
   }, []);
 
   const addToWatchlist = useCallback((stock: Stock) => {
@@ -163,7 +241,6 @@ export function useWatchlist() {
 
   const removeFromWatchlist = useCallback((key: string) => {
     setWatchlist((prev) => prev.filter((s) => stockKey(s) !== key));
-    // 分组里的残留 key 渲染时按 watchlist 过滤，无需清理
   }, []);
 
   const toggleWatchlist = useCallback((stock: Stock) => {
@@ -179,6 +256,7 @@ export function useWatchlist() {
     const nextStocks = normalizeStocks(stocks);
     setWatchlist(nextStocks);
     setGroups(normalizeGroupCodes(nextGroups, nextStocks));
+    localStorage.setItem(WATCHLIST_SYNC_UPDATED_KEY, String(Date.now()));
   }, []);
 
   const createGroup = useCallback((name: string) => {
@@ -193,7 +271,6 @@ export function useWatchlist() {
     setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, name } : g)));
   }, []);
 
-  // 拖拽排序：把 from 分组挪到 to 分组的位置（移动后 from===to，天然幂等）
   const moveGroup = useCallback((fromId: string, toId: string) => {
     setGroups((prev) => {
       const from = prev.findIndex((g) => g.id === fromId);
@@ -213,12 +290,30 @@ export function useWatchlist() {
   }, []);
 
   const removeFromGroup = useCallback((id: string, key: string) => {
-    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, codes: g.codes.filter((c) => c !== key) } : g)));
+    setGroups((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, codes: g.codes.filter((c) => c !== key) } : g))
+    );
   }, []);
 
   return {
-    watchlist, groups, addToWatchlist, removeFromWatchlist, toggleWatchlist, replaceAll,
-    createGroup, removeGroup, renameGroup, moveGroup, addToGroup, removeFromGroup,
-    syncState, syncError, lastSyncedAt, pull, forcePush, disconnect,
+    watchlist,
+    groups,
+    addToWatchlist,
+    removeFromWatchlist,
+    toggleWatchlist,
+    replaceAll,
+    createGroup,
+    removeGroup,
+    renameGroup,
+    moveGroup,
+    addToGroup,
+    removeFromGroup,
+    syncState,
+    syncError,
+    lastSyncedAt,
+    syncNow,
+    forcePush,
   };
 }
+
+export type WatchlistSyncApi = ReturnType<typeof useWatchlist>;

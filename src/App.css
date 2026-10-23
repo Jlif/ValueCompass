@@ -1971,3 +1971,187 @@ button:focus-visible {
   flex-direction: column;
   gap: 4px;
 }
+
+.sync-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sync-panel-heading .sync-subtitle {
+  margin-bottom: 2px;
+}
+
+.sync-config-form,
+.sync-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-derived {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-size: 11px;
+}
+
+.sync-connection-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.sync-connection-summary strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.sync-connection-summary span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sync-connection-summary code {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-object-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sync-object-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+.sync-object-row + .sync-object-row {
+  border-top: 1px solid var(--border);
+}
+
+.sync-object-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.sync-object-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sync-object-title strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sync-object-title span {
+  text-align: right;
+  color: var(--text-faint);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-object-copy code {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-object-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sync-object-actions .btn-small {
+  padding: 4px 8px;
+}
+
+.sync-advanced,
+.sync-backup-details {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.sync-advanced summary,
+.sync-backup-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sync-advanced-body {
+  padding-top: 8px;
+}
+
+.sync-backup-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-object-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.sync-object-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sync-object-heading strong {
+  color: var(--text-secondary);
+}
+
+.sync-object-heading span {
+  color: var(--text-faint);
+  font-size: 11px;
+}

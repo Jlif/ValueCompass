@@ -36,12 +36,12 @@ assert(
 );
 assert(!exported.includes('token') && !exported.includes('gistId'), '导出不包含同步凭据');
 
-const gistFormat = parseWatchlistBackup(JSON.stringify({
+const legacyFormat = parseWatchlistBackup(JSON.stringify({
   stocks: [{ code: '09988', name: '阿里巴巴', exchange: 'HK' }],
   groups: [{ id: 'g2', name: '港股', codes: ['09988'] }],
 }));
-assert(gistFormat.watchlist[0].code === '09988', '兼容 Gist stocks 格式');
-assert(gistFormat.groups[0].codes[0] === '09988.HK', 'Gist 旧分组同样完成 key 迁移');
+assert(legacyFormat.watchlist[0].code === '09988', '兼容旧同步文件 stocks 格式');
+assert(legacyFormat.groups[0].codes[0] === '09988.HK', '旧分组同样完成 key 迁移');
 
 let invalidRejected = false;
 try {
