@@ -3,6 +3,7 @@ import type { KlinePeriod } from '../services/tickflow';
 import { PERIODS, PERIOD_LABELS } from '../utils/periods';
 import { KlineChart } from './KlineChart';
 import { StockF10 } from './StockF10';
+import { StockNotes } from './StockNotes';
 import { StockQuoteBar } from './StockQuoteBar';
 
 interface Props {
@@ -34,18 +35,24 @@ export function StockDetail({
 }: Props) {
   return (
     <div className="stock-detail">
-      <h2>
-        {stock.name}
-        <span className={`exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>
-          {stock.code} · {stock.exchange === 'HK' ? '港股' : stock.exchange}
-        </span>
-        <button
-          className={`watchlist-btn-large ${inWatchlist ? 'in-watchlist' : ''}`}
-          onClick={() => onToggleWatchlist(stock)}
-        >
-          {inWatchlist ? '★ 已自选' : '☆ 加自选'}
-        </button>
-      </h2>
+      <div className="stock-heading">
+        <h2>
+          {stock.name}
+          <span className={`exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>
+            {stock.code} · {stock.exchange === 'HK' ? '港股' : stock.exchange}
+          </span>
+        </h2>
+        <div className="stock-heading-actions">
+          <button
+            type="button"
+            className={`watchlist-btn-large ${inWatchlist ? 'in-watchlist' : ''}`}
+            onClick={() => onToggleWatchlist(stock)}
+          >
+            {inWatchlist ? '★ 已自选' : '☆ 加自选'}
+          </button>
+          <StockNotes stock={stock} />
+        </div>
+      </div>
 
       <StockQuoteBar
         quote={quote}

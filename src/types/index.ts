@@ -5,6 +5,13 @@ export interface Stock {
   exchange: string;
 }
 
+// 股票笔记：按 stockKey（`code.exchange`）归属到单只股票
+export interface StockNote {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
 // K线数据
 export interface KlineData {
   date: string;

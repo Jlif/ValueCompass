@@ -563,14 +563,32 @@ button:focus-visible {
 }
 
 /* ===== Stock Detail ===== */
-.stock-detail h2 {
+.stock-heading {
   margin: 0 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stock-detail h2 {
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 22px;
   font-weight: 600;
   color: var(--text-strong);
+}
+
+.stock-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stock-heading-actions .watchlist-btn-large {
+  margin-left: 0;
 }
 
 .stock-detail .exchange {
@@ -587,6 +605,191 @@ button:focus-visible {
   color: var(--warn);
   border-color: var(--warn-border);
   background: var(--warn-soft);
+}
+
+/* ===== Stock Notes ===== */
+.stock-notes {
+  position: relative;
+}
+
+.note-btn-large:hover {
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+
+.note-btn-large.has-notes {
+  border-color: var(--primary);
+  color: var(--primary-text);
+  background: var(--primary-soft);
+}
+
+.stock-notes-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 120;
+  width: min(440px, calc(100vw - 48px));
+  max-height: min(72vh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+
+.stock-notes-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-notes-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-strong);
+}
+
+.stock-notes-header p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.stock-notes-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stock-notes-close:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.stock-notes-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stock-notes-composer textarea {
+  width: 100%;
+  min-height: 96px;
+  max-height: 220px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.stock-notes-composer textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.stock-notes-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-notes-composer-footer span {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.stock-notes-list {
+  min-height: 76px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.stock-note {
+  padding: 12px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.stock-note:first-child {
+  border-top: 0;
+}
+
+.stock-note-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.stock-note-meta time {
+  color: var(--text-faint);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 10px;
+}
+
+.stock-note-meta button {
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.stock-note-meta button:hover {
+  color: var(--danger);
+}
+
+.stock-note > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.stock-notes-empty {
+  padding: 22px 12px 18px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.stock-notes-empty span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stock-notes-empty p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.stock-notes-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
 }
 
 .quote-bar {
