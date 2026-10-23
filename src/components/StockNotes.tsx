@@ -82,7 +82,7 @@ export function StockNotes({ stock }: Props) {
           <div className="stock-notes-header">
             <div>
               <h3>{stock.name} · 投资笔记</h3>
-              <p>仅保存在当前浏览器</p>
+              <p>本机缓存，可开启 S3 同步</p>
             </div>
             <button
               type="button"

@@ -585,6 +585,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
 
 .stock-heading-actions .watchlist-btn-large {
@@ -1898,4 +1899,75 @@ button:focus-visible {
 
 .group-remove-btn:hover {
   color: var(--danger);
+}
+
+/* ===== 笔记 S3 同步 ===== */
+.notes-sync-panel {
+  width: 390px;
+  max-height: min(78vh, 760px);
+  overflow-y: auto;
+}
+
+.notes-sync-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notes-sync-field > span {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.notes-sync-panel select {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.notes-sync-panel select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.notes-sync-row {
+  display: flex;
+  gap: 8px;
+}
+
+.notes-sync-row .notes-sync-field {
+  flex: 1;
+}
+
+.notes-sync-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.notes-sync-check input {
+  width: auto;
+}
+
+.notes-sync-panel code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 11px;
+}
+
+.notes-sync-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

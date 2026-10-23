@@ -2,15 +2,33 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://emweb.securities.eastmoney.com/*" },
-        { "url": "https://datacenter.eastmoney.com/*" }
+        {
+          "url": "https://emweb.securities.eastmoney.com/*"
+        },
+        {
+          "url": "https://datacenter.eastmoney.com/*"
+        },
+        {
+          "url": "https://*.aliyuncs.com/*"
+        },
+        {
+          "url": "https://*.myqcloud.com/*"
+        },
+        {
+          "url": "http://localhost:*"
+        },
+        {
+          "url": "http://127.0.0.1:*"
+        }
       ]
     }
   ]

@@ -14,12 +14,15 @@
     "check:markets": "node scripts/check-markets.mjs",
     "check:hk-finance": "node scripts/check-hk-finance.mjs",
     "check:backup": "node scripts/check-backup.mjs",
-    "check:gist": "node --experimental-strip-types --no-warnings scripts/check-gist.mjs"
+    "check:gist": "node --experimental-strip-types --no-warnings scripts/check-gist.mjs",
+    "check:notes": "node --experimental-strip-types --no-warnings scripts/check-notes.mjs",
+    "check:s3": "node --experimental-strip-types --no-warnings scripts/check-s3.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-http": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2",
+    "aws4fetch": "^1.0.20",
     "lightweight-charts": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
