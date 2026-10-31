@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check:cache": "node scripts/check-cache.mjs",
+    "check:finance-periods": "node --experimental-strip-types --no-warnings scripts/check-finance-periods.mjs",
     "check:retry": "node scripts/check-retry.mjs",
     "check:hk": "node scripts/check-hk.mjs",
     "check:markets": "node scripts/check-markets.mjs",

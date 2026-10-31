@@ -16,6 +16,10 @@ writeFileSync(tmpTs, src);
 for (const file of ['cache.ts', 'http.ts']) {
   copyFileSync(join(root, 'src', 'services', file), join(tempDir, file));
 }
+copyFileSync(
+  join(root, 'src', 'services', 'financePeriods.ts'),
+  join(tempDir, 'financePeriods.ts')
+);
 
 // ---- 桩 ----
 globalThis.window = {};
@@ -47,6 +51,23 @@ const a = await fetchFinance(stock);
 const first = calls;
 assert(first > 0, `首次请求走网络（${first} 个请求, ${Date.now() - t0}ms）`);
 assert(Object.keys(a.indicator).length > 0, '首次返回含指标数据');
+assert(a.periodOrder?.includes(a.latestPeriod), '最新报告期已包含在三表请求中');
+assert(a.periods?.[a.latestPeriod]?.reportType, 'A 股报告期包含报告类型');
+assert(
+  typeof a.indicator[a.latestPeriod]?.['经营现金流营收比'] === 'number',
+  'A 股包含经营现金流营业收入比'
+);
+if (a.comparisonPeriod) {
+  const latestParts = a.latestPeriod.split('-').map(Number);
+  const comparisonParts = a.comparisonPeriod.split('-').map(Number);
+  assert(a.periodOrder?.includes(a.comparisonPeriod), '去年同期已包含在三表请求中');
+  assert(
+    latestParts[0] - comparisonParts[0] === 1 &&
+      latestParts[1] === comparisonParts[1] &&
+      latestParts[2] === comparisonParts[2],
+    '去年同期按相同月日匹配'
+  );
+}
 
 // 2) 二次：命中缓存，零请求
 calls = 0;
@@ -64,21 +85,21 @@ await fetchFinance({ code: '600519', name: '贵州茅台', exchange: 'SH' });
 assert(calls === 0, '茅台二次同样零请求');
 
 // 4) TTL 过期后重新拉取
-const raw = JSON.parse(store.get('vc.finance.v1'));
+const raw = JSON.parse(store.get('vc.finance.v3'));
 raw['600827'].t -= 25 * 3600 * 1000; // 回拨 25 小时
-store.set('vc.finance.v1', JSON.stringify(raw));
+store.set('vc.finance.v3', JSON.stringify(raw));
 calls = 0;
 await fetchFinance(stock);
 assert(calls > 0, `TTL 过期后重新拉取（${calls} 个请求）`);
 
 // 5) 容量淘汰：超过 60 只时保留最新的（淘汰只在写入时触发）
-const raw2 = JSON.parse(store.get('vc.finance.v1'));
+const raw2 = JSON.parse(store.get('vc.finance.v3'));
 for (let i = 0; i < 65; i++) raw2[`90000${i}`] = { t: Date.now() - (i + 1) * 1000, d: raw2['600827'].d };
 delete raw2['600519']; // 腾出一只未缓存的股票，强制走网络触发写入
-store.set('vc.finance.v1', JSON.stringify(raw2));
+store.set('vc.finance.v3', JSON.stringify(raw2));
 calls = 0;
 await fetchFinance({ code: '600519', name: '贵州茅台', exchange: 'SH' });
-const kept = Object.keys(JSON.parse(store.get('vc.finance.v1')));
+const kept = Object.keys(JSON.parse(store.get('vc.finance.v3')));
 assert(kept.length <= 60, `容量淘汰生效（保留 ${kept.length} 条 ≤ 60）`);
 assert(kept.includes('600519'), '本次写入的股票被保留');
 assert(!kept.includes('9000064'), '最旧的条目被淘汰');

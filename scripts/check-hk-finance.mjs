@@ -11,7 +11,7 @@ const source = readFileSync(join(root, 'src', 'services', 'hkFinance.ts'), 'utf8
 const tempDir = mkdtempSync(join(tmpdir(), 'vc-hk-finance-'));
 const tempTs = join(tempDir, 'hkFinance.ts');
 writeFileSync(tempTs, source);
-for (const file of ['cache.ts', 'http.ts']) {
+for (const file of ['cache.ts', 'financePeriods.ts', 'http.ts']) {
   copyFileSync(join(root, 'src', 'services', file), join(tempDir, file));
 }
 
@@ -25,7 +25,9 @@ globalThis.localStorage = {
 
 const reports = {
   '00700': [
+    ['2026-09-30', '三季报', '人民币'],
     ['2026-06-30', '中报', '人民币'],
+    ['2025-09-30', '三季报', '人民币'],
     ['2025-12-31', '年报', '人民币'],
     ['2025-06-30', '中报', '人民币'],
     ['2024-12-31', '年报', '人民币'],
@@ -35,8 +37,10 @@ const reports = {
     ['2020-12-31', '年报', '人民币'],
   ],
   '09988': [
+    ['2026-06-30', '一季报', '人民币'],
     ['2026-03-31', '年报', '人民币'],
     ['2025-09-30', '中报', '人民币'],
+    ['2025-06-30', '一季报', '人民币'],
     ['2025-03-31', '年报', '人民币'],
     ['2024-09-30', '中报', '人民币'],
     ['2024-03-31', '年报', '人民币'],
@@ -180,9 +184,11 @@ const assert = (ok, message) => {
 const tencent = await fetchHkFinance({ code: '00700', name: '腾讯控股', exchange: 'HK' });
 assert(
   tencent.periodOrder.join(',') ===
-    '2021-12-31,2022-12-31,2023-12-31,2024-12-31,2025-12-31,2025-06-30,2026-06-30',
-  '腾讯报告期按 5 年报 + 2 中报排序'
+    '2021-12-31,2022-12-31,2023-12-31,2024-12-31,2025-12-31,2025-09-30,2026-09-30',
+  '腾讯报告期按 5 年报 + 最新三季报 + 去年同期排序'
 );
+assert(tencent.latestPeriod === '2026-09-30', '腾讯最新报告期识别为三季报');
+assert(tencent.comparisonPeriod === '2025-09-30', '腾讯三季报去年同期已选中');
 assert(tencent.periods?.['2025-12-31'].currency === '人民币', '腾讯报表币种为人民币');
 assert(tencent.profit['2025-12-31']['营业额'] === 751766000000, '利润表保留原始币种金额');
 assert(tencent.indicator['2025-12-31']['ROE'] === 21.1347, '港股 ROE 直接取主要指标');
@@ -192,6 +198,8 @@ assert(HK_METRIC_GROUPS.some((group) => group.title === '现金流'), '港股专
 const alibaba = await fetchHkFinance({ code: '09988', name: '阿里巴巴', exchange: 'HK' });
 assert(alibaba.periodOrder.includes('2026-03-31'), '支持非 12 月财年');
 assert(alibaba.periods?.['2026-03-31'].reportType === '年报', '非自然年仍按报告类型标记年报');
+assert(alibaba.latestPeriod === '2026-06-30', '非自然年财年按实际最新报告展示');
+assert(alibaba.comparisonPeriod === '2025-06-30', '非自然年财年按日期匹配去年同期');
 
 const hsbc = await fetchHkFinance({ code: '00005', name: '汇丰控股', exchange: 'HK' });
 assert(hsbc.periods?.['2025-12-31'].currency === '美元', '支持美元报表');

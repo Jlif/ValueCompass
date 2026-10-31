@@ -1,5 +1,6 @@
 import type { Stock } from '../types';
 import { createCache } from './cache.ts';
+import { selectFinancePeriods } from './financePeriods.ts';
 import { getJson, isTauriRuntime } from './http.ts';
 
 // 东财 F10 财务数据（akshare 同款数据源，JSON 接口）
@@ -29,6 +30,8 @@ export interface FinanceData extends FinanceTables {
   // 金额单位由具体数据适配器决定；A 股为万元，港股为原始报表币种。
   periods?: Record<string, FinancePeriodMeta>;
   periodOrder?: string[];
+  latestPeriod?: string;
+  comparisonPeriod?: string;
 }
 
 const EM_HOST = 'https://emweb.securities.eastmoney.com';
@@ -65,11 +68,13 @@ const DATA_TTL = 24 * 3600 * 1000; // 财报季度更新，缓存 1 天
 const DATA_KEEP = 60; // 最多留 60 只，防 localStorage 超限
 
 const financeCache = createCache<FinanceData>({
-  key: 'vc.finance.v1',
+  key: 'vc.finance.v3',
   ttl: DATA_TTL,
   limit: DATA_KEEP,
   enabled: CACHE_ON,
 });
+localStorage.removeItem('vc.finance.v1');
+localStorage.removeItem('vc.finance.v2');
 
 function readCt(code: string): number | null {
   const v = Number(localStorage.getItem(`${CT_KEY}.${code}`));
@@ -204,50 +209,82 @@ function mapOne(row: EmRow, map: Record<string, FieldSpec>, toWan: boolean): Rec
   return out;
 }
 
-// F10 显示 5 年报 + 2 半年报（以指标接口实际披露为准）；三表多拉兜底
+function chunkDates(dates: string[], size = 5): string[][] {
+  return Array.from({ length: Math.ceil(dates.length / size) }, (_, index) =>
+    dates.slice(index * size, (index + 1) * size)
+  );
+}
+
+function periodStartDate(period: string): string {
+  return `${period.slice(0, 4)}-01-01`;
+}
+
+// F10 展示最近 5 份年报，并在右侧展示最新报告和去年同期。
 export async function fetchFinance(stock: Stock): Promise<FinanceData> {
   const cached = financeCache.get(stock.code);
   if (cached) return cached;
 
-  const thisYear = new Date().getFullYear();
-  const periods = [
-    ...Array.from({ length: 6 }, (_, i) => `${thisYear - i}-12-31`),
-    `${thisYear}-06-30`,
-    `${thisYear - 1}-06-30`,
-    `${thisYear - 2}-06-30`,
-  ];
-  // dates 每次最多 5 个；首批资产负债表请求同时完成公司类型探测
-  const first = await probeWithRows(stock, periods.slice(0, 5).join(','));
-  const rest = periods.slice(5).join(',');
   const secu = `${emCode(stock).slice(2)}.${emCode(stock).slice(0, 2)}`;
-  const [b2, l1, l2, x1, x2, zyzb] = await Promise.all([
-    emRows('Zcfzb', stock, rest, first.ct),
-    emRows('Lrb', stock, periods.slice(0, 5).join(','), first.ct),
-    emRows('Lrb', stock, rest, first.ct),
-    emRows('Xjllb', stock, periods.slice(0, 5).join(','), first.ct),
-    emRows('Xjllb', stock, rest, first.ct),
-    dcJson(
-      `/securities/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=${encodeURIComponent(
-        `(SECUCODE="${secu}")`
-      )}&pageNumber=1&pageSize=21&sortColumns=REPORT_DATE&sortTypes=-1&source=HSF10&client=PC`
-    ),
+  const zyzb = await dcJson(
+    `/securities/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=${encodeURIComponent(
+      `(SECUCODE="${secu}")`
+    )}&pageNumber=1&pageSize=21&sortColumns=REPORT_DATE&sortTypes=-1&source=HSF10&client=PC`
+  );
+  const indicatorRows = (zyzb.result?.data ?? []) as EmRow[];
+  const selected = selectFinancePeriods(
+    indicatorRows.map((row) => ({
+      row,
+      date: row.REPORT_DATE,
+      reportType: String(row.REPORT_TYPE ?? ''),
+    }))
+  );
+  if (selected.reports.length === 0) throw new Error('东财未返回 A 股报告期');
+
+  const periodOrder = selected.reports.map((report) => report.date);
+  const batches = chunkDates(periodOrder);
+  // dates 每次最多 5 个；首批资产负债表请求同时完成公司类型探测。
+  const first = await probeWithRows(stock, batches[0].join(','));
+  const [balanceRest, incomeBatches, cashflowBatches] = await Promise.all([
+    Promise.all(batches.slice(1).map((batch) => emRows('Zcfzb', stock, batch.join(','), first.ct))),
+    Promise.all(batches.map((batch) => emRows('Lrb', stock, batch.join(','), first.ct))),
+    Promise.all(batches.map((batch) => emRows('Xjllb', stock, batch.join(','), first.ct))),
   ]);
   const data: FinanceData = {
     indicator: {},
     profit: {},
     balance: {},
     cashflow: {},
+    periods: {},
+    periodOrder,
+    latestPeriod: selected.latestPeriod ?? undefined,
+    comparisonPeriod: selected.comparisonPeriod ?? undefined,
   };
+  for (const report of selected.reports) {
+    data.periods![report.date] = {
+      reportType: report.reportType,
+      currency: '人民币',
+      accountingStandard: '中国企业会计准则',
+      startDate: periodStartDate(report.date),
+    };
+  }
+
+  const selectedDates = new Set(periodOrder);
   const put = (dict: FinanceDict, rows: EmRow[], map: Record<string, FieldSpec>, toWan: boolean) => {
-    for (const r of rows) dict[r.REPORT_DATE.slice(0, 10)] = mapOne(r, map, toWan);
+    for (const r of rows) {
+      const period = r.REPORT_DATE.slice(0, 10);
+      if (selectedDates.has(period)) dict[period] = mapOne(r, map, toWan);
+    }
   };
-  put(data.balance, [...first.rows, ...b2], BALANCE_MAP, true);
-  put(data.profit, [...l1, ...l2], PROFIT_MAP, true);
-  put(data.cashflow, [...x1, ...x2], CASHFLOW_MAP, true);
-  for (const r of ((zyzb.result?.data ?? []) as EmRow[])) {
-    const p = r.REPORT_DATE.slice(0, 10);
-    data.indicator[p] = mapOne(r, ZYZB_INDICATOR, false);
-    data.profit[p] = { ...data.profit[p], ...mapOne(r, ZYZB_PROFIT, false) };
+  put(data.balance, [...first.rows, ...balanceRest.flat()], BALANCE_MAP, true);
+  put(data.profit, incomeBatches.flat(), PROFIT_MAP, true);
+  put(data.cashflow, cashflowBatches.flat(), CASHFLOW_MAP, true);
+  for (const report of selected.reports) {
+    const p = report.date;
+    data.indicator[p] = mapOne(report.row, ZYZB_INDICATOR, false);
+    if (typeof report.row.JYXJLYYSR === 'number') {
+      data.indicator[p]['经营现金流营收比'] = report.row.JYXJLYYSR * 100;
+    }
+    data.profit[p] = { ...data.profit[p], ...mapOne(report.row, ZYZB_PROFIT, false) };
   }
   deriveMetrics(data);
   financeCache.set(stock.code, data);
@@ -286,6 +323,13 @@ function deriveMetrics(data: FinanceData): void {
       // 毛利率 = (营收-营业成本)/营收
       const cost = data.profit[p]?.['营业成本'];
       if (cost != null) data.profit[p]['毛利率'] = ((rev - cost) / rev) * 100;
+      // 经营现金流/营业收入，源字段缺失时按同口径从三表回退计算
+      if (data.indicator[p]?.['经营现金流营收比'] == null) {
+        const operatingCash = data.cashflow[p]?.['经营活动产生的现金流量净额'];
+        if (operatingCash != null) {
+          data.indicator[p]['经营现金流营收比'] = (operatingCash / rev) * 100;
+        }
+      }
       // 税前经营利润率 = (利润总额 - 投资收益 - 公允价值变动收益)/营收
       const tp = pick(data.profit, p, ['利润总额', '四、利润总额']);
       if (tp != null) {
@@ -428,6 +472,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       { label: '管理费用率', src: 'profit', key: '管理费用率', pct: true },
       { label: '研发费用率', src: 'profit', key: '研发费用率', pct: true },
       { label: '财务费用率', src: 'profit', key: '财务费用率', pct: true },
+      { label: '经营现金流/营业收入', src: 'indicator', key: '经营现金流营收比', pct: true },
       { label: '投资收益/归母净利', src: 'profit', key: '投资收益/归母净利', pct: true },
       { label: '实际所得税率', src: 'profit', key: '实际所得税率', pct: true },
       { label: '减值损失/归母净利', src: 'profit', key: '减值损失/归母净利', pct: true },

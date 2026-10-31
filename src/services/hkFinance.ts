@@ -6,6 +6,7 @@ import type {
   MetricRow,
 } from './finance';
 import { createCache } from './cache.ts';
+import { selectFinancePeriods } from './financePeriods.ts';
 import { getJson } from './http.ts';
 
 const DC_HOST = 'https://datacenter.eastmoney.com';
@@ -117,11 +118,12 @@ async function fetchIndicators(stock: Stock): Promise<HkIndicatorRow[]> {
 }
 
 const hkFinanceCache = createCache<FinanceData>({
-  key: 'vc.hk_finance.v1',
+  key: 'vc.hk_finance.v2',
   ttl: DATA_TTL,
   limit: DATA_KEEP,
   enabled: CACHE_ON,
 });
+localStorage.removeItem('vc.hk_finance.v1');
 
 function itemName(name: string): string {
   return name.trim().replace(/\s+/g, '').replace(/[：:]/g, '').replace(/帐/g, '账');
@@ -336,14 +338,21 @@ function deriveHkRatios(data: FinanceData): void {
   }
 }
 
-function selectPeriods(reports: HkReportRow[]): HkReportRow[] {
-  const ordered = reports
-    .filter((report) => report.REPORT_DATE && report.REPORT_TYPE)
-    .sort((a, b) => b.REPORT_DATE.localeCompare(a.REPORT_DATE));
-  const unique = [...new Map(ordered.map((report) => [report.REPORT_DATE.slice(0, 10), report])).values()];
-  const annual = unique.filter((report) => report.REPORT_TYPE === '年报').slice(0, 5).reverse();
-  const interim = unique.filter((report) => report.REPORT_TYPE === '中报').slice(0, 2).reverse();
-  return [...annual, ...interim];
+interface HkPeriodReport extends HkReportRow {
+  date: string;
+  reportType: string;
+}
+
+function selectPeriods(reports: HkReportRow[]) {
+  return selectFinancePeriods(
+    reports
+      .filter((report) => report.REPORT_DATE && report.REPORT_TYPE)
+      .map<HkPeriodReport>((report) => ({
+        ...report,
+        date: report.REPORT_DATE,
+        reportType: report.REPORT_TYPE,
+      }))
+  );
 }
 
 function emptyFinanceData(periods: FinancePeriodMeta[], periodOrder: string[]): FinanceData {
@@ -366,17 +375,20 @@ function emptyFinanceData(periods: FinancePeriodMeta[], periodOrder: string[]): 
 }
 
 async function loadHkFinance(stock: Stock): Promise<FinanceData> {
-  const reports = selectPeriods(await fetchReportList(stock));
+  const selected = selectPeriods(await fetchReportList(stock));
+  const reports = selected.reports;
   if (reports.length === 0) throw new Error('东财未返回港股报告期');
 
-  const periodOrder = reports.map((report) => report.REPORT_DATE.slice(0, 10));
+  const periodOrder = reports.map((report) => report.date);
   const metadata = reports.map<FinancePeriodMeta>((report) => ({
-    reportType: report.REPORT_TYPE,
+    reportType: report.reportType,
     currency: report.CURRENCY,
     accountingStandard: report.ACCOUNT_STANDARD,
     startDate: report.START_DATE.slice(0, 10),
   }));
   const data = emptyFinanceData(metadata, periodOrder);
+  data.latestPeriod = selected.latestPeriod ?? undefined;
+  data.comparisonPeriod = selected.comparisonPeriod ?? undefined;
   const filter = `(SECUCODE="${stock.code}.HK")(REPORT_DATE in (${periodOrder
     .map((period) => `'${period}'`)
     .join(',')}))`;

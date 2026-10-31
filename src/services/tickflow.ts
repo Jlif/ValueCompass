@@ -90,9 +90,9 @@ function toStock(item: ExchangeInstruments['data'][number]): Stock {
   };
 }
 
-// ponytail: 全量列表缓存在 localStorage，1 小时过期，避免每次启动拉 5000+ 条
+// ponytail: 全量列表缓存在 localStorage，7 天过期；新上市标的可通过手动刷新立即补齐
 const STOCKS_CACHE_KEY = 'vc_stocks_cache_v3'; // v3: 新增港股
-const STOCKS_CACHE_TTL = 60 * 60 * 1000;
+const STOCKS_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 export async function fetchStockList(): Promise<Stock[]> {
   const cached = localStorage.getItem(STOCKS_CACHE_KEY);

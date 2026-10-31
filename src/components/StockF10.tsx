@@ -33,6 +33,12 @@ function currencyLabel(currency?: string): string {
   return currency;
 }
 
+function reportBasis(reportType?: string): string {
+  return reportType === '一季报' || reportType === '中报' || reportType === '三季报'
+    ? '累计'
+    : '';
+}
+
 export function StockF10({ stock, quote }: Props) {
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [industry, setIndustry] = useState<string | null>(null);
@@ -79,12 +85,14 @@ export function StockF10({ stock, quote }: Props) {
     };
   }, [stock.code, stock.exchange, isHongKong]);
 
-  // A 股固定取 5 年报 + 2 中报；港股使用适配器选出的实际财年。
+  // 两个适配器都返回最近 5 份年报、最新报告和去年同期。
   const allPeriods = finance ? Object.keys(finance.indicator).sort() : [];
   const periods = finance?.periodOrder ?? [
     ...allPeriods.filter((p) => p.endsWith('-12-31')).slice(-5),
     ...allPeriods.filter((p) => p.endsWith('-06-30')).slice(-2),
   ];
+  const latestPeriod = finance?.latestPeriod ?? periods[periods.length - 1];
+  const comparisonPeriod = finance?.comparisonPeriod;
   const metricGroups = isHongKong ? HK_METRIC_GROUPS : METRIC_GROUPS;
   const currencies = [
     ...new Set(Object.values(finance?.periods ?? {}).map((meta) => currencyLabel(meta.currency))),
@@ -158,12 +166,30 @@ export function StockF10({ stock, quote }: Props) {
                       <th>指标</th>
                       {periods.map((p) => {
                         const meta = finance.periods?.[p];
+                        const isLatest = p === latestPeriod;
+                        const isComparison = p === comparisonPeriod;
                         return (
-                          <th key={p}>
+                          <th
+                            key={p}
+                            className={
+                              isLatest
+                                ? 'f10-period-latest'
+                                : isComparison
+                                  ? 'f10-period-comparison'
+                                  : undefined
+                            }
+                          >
+                            {(isLatest || isComparison) && (
+                              <span className="f10-period-badge">
+                                {isLatest ? '最新' : '去年同期'}
+                              </span>
+                            )}
                             <span>{periodLabel(p, meta?.reportType)}</span>
                             {meta && (
                               <span className="f10-period-meta">
-                                {currencyLabel(meta.currency)} · {meta.reportType}
+                                {[currencyLabel(meta.currency), meta.reportType, reportBasis(meta.reportType)]
+                                  .filter(Boolean)
+                                  .join(' · ')}
                               </span>
                             )}
                           </th>

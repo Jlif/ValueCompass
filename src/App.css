@@ -999,6 +999,8 @@ button:focus-visible {
   position: absolute;
   top: 10px;
   left: 10px;
+  pointer-events: none;
+  user-select: none;
   background: var(--tooltip-bg);
   padding: 12px 16px;
   border-radius: 8px;
@@ -1321,6 +1323,25 @@ button:focus-visible {
   color: var(--text-faint);
   font-size: 10px;
   font-weight: 400;
+}
+
+.f10-period-badge {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.f10-table th.f10-period-latest {
+  color: var(--primary-text);
+}
+
+.f10-table th.f10-period-comparison {
+  border-left: 1px solid var(--border);
 }
 
 .f10-table .f10-metric-label {
