@@ -24,6 +24,18 @@ export default defineConfig(async () => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/em/, ""),
       },
+      // 东财行情/估值快照代理（解决浏览器 CORS）
+      "/push2": {
+        target: "https://push2.eastmoney.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/push2/, ""),
+      },
+      // 腾讯行情估值降级源
+      "/tencent": {
+        target: "https://qt.gtimg.cn",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/tencent/, ""),
+      },
     },
     hmr: host
       ? {

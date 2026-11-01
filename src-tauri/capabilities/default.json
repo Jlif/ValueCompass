@@ -18,6 +18,12 @@
           "url": "https://datacenter.eastmoney.com/*"
         },
         {
+          "url": "https://push2.eastmoney.com/*"
+        },
+        {
+          "url": "https://qt.gtimg.cn/*"
+        },
+        {
           "url": "https://*.aliyuncs.com/*"
         },
         {

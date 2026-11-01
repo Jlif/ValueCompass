@@ -8,6 +8,7 @@ import { useS3SyncSettings } from './hooks/useS3SyncSettings';
 import { useStockList } from './hooks/useStockList';
 import { useStockQuote } from './hooks/useStockQuote';
 import { useSyncScopes } from './hooks/useSyncScopes';
+import { useValuationSnapshot } from './hooks/useValuationSnapshot';
 import { useWatchlist } from './hooks/useWatchlist';
 import { stockKey } from './utils/stockKey';
 import './App.css';
@@ -15,6 +16,7 @@ import './App.css';
 function App() {
   const syncSettings = useS3SyncSettings();
   const { stocks, industryMap, loading: listLoading, refreshing, error: listError, refresh } = useStockList();
+  const valuationSnapshot = useValuationSnapshot(stocks);
   const {
     stock: selectedStock,
     period,
@@ -71,6 +73,11 @@ function App() {
         <Sidebar
           stocks={stocks}
           industryMap={industryMap}
+          valuations={valuationSnapshot.valuations}
+          valuationLoading={valuationSnapshot.loading}
+          valuationError={valuationSnapshot.error}
+          valuationUpdatedAt={valuationSnapshot.updatedAt}
+          onRefreshValuations={valuationSnapshot.refresh}
           loading={listLoading}
           error={listError}
           refreshing={refreshing}

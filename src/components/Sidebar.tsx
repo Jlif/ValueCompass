@@ -1,21 +1,34 @@
 import { useMemo, useState } from 'react';
 import type { Stock, WatchGroup } from '../types';
 import type { IndustryInfo } from '../services/tickflow';
+import {
+  DEFAULT_STOCK_FILTERS,
+  filterStocks,
+  type StockFilters,
+  type StockMarketFilter,
+} from '../services/stockScreener';
+import type { StockValuation } from '../services/valuation/types';
 import { stockKey } from '../utils/stockKey';
 import { getBoardInfo, groupStocksByMarket } from '../utils/markets';
+import { formatValuationLine, valuationTooltip } from '../utils/valuationFormat';
 import { GroupManager } from './GroupManager';
 import { IndustrySelect } from './IndustrySelect';
+import { ScreenerFilters } from './ScreenerFilters';
 import { StockGroupMenu } from './StockGroupMenu';
 
 // 自选 tab 内拖拽股票时的载体（HTML5 DnD 只能存 string）
 const DRAG_MIME = 'application/x-vc-stock';
 
 type Tab = 'all' | 'watchlist';
-type Market = 'ALL' | 'CN' | 'HK';
 
 interface Props {
   stocks: Stock[];
   industryMap: Record<string, IndustryInfo>;
+  valuations: Record<string, StockValuation>;
+  valuationLoading: boolean;
+  valuationError: string | null;
+  valuationUpdatedAt: number | null;
+  onRefreshValuations: () => void;
   loading: boolean;
   error: string | null;
   refreshing: boolean;
@@ -40,6 +53,11 @@ interface Props {
 export function Sidebar({
   stocks,
   industryMap,
+  valuations,
+  valuationLoading,
+  valuationError,
+  valuationUpdatedAt,
+  onRefreshValuations,
   loading,
   error,
   refreshing,
@@ -58,11 +76,8 @@ export function Sidebar({
   onRenameGroup,
   onMoveGroup,
 }: Props) {
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [filters, setFilters] = useState<StockFilters>(() => ({ ...DEFAULT_STOCK_FILTERS }));
   const [activeTab, setActiveTab] = useState<Tab>('all');
-  const [industryFilter, setIndustryFilter] = useState('');
-  const [marketFilter, setMarketFilter] = useState<Market>('ALL');
-  const [hideST, setHideST] = useState(true);
   const [expandedMarkets, setExpandedMarkets] = useState<Set<string>>(() => new Set());
   const [expandedBoards, setExpandedBoards] = useState<Set<string>>(() => new Set());
   // 自选分组：null = 全部；newGroupName 为 null 关闭输入，'' 打开空输入
@@ -70,23 +85,28 @@ export function Sidebar({
   const [newGroupName, setNewGroupName] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
 
-  // 展示的股票列表：搜索 + 行业 + ST 过滤（前端本地过滤，列表已在内存中）
+  // 展示的股票列表：搜索、市场、行业、ST 与估值区间（全部在内存中过滤）
   const displayStocks = useMemo(() => {
-    const kw = searchKeyword.trim();
-    // industryFilter 格式 'sw1:食品饮料' / 'sw2:饮料乳品' / 'sw3:乳品'
-    const [level, name] = industryFilter ? industryFilter.split(':') : [];
-    return stocks.filter((s) => {
-      if (marketFilter === 'CN' && s.exchange === 'HK') return false;
-      if (marketFilter === 'HK' && s.exchange !== 'HK') return false;
-      if (kw && !s.code.includes(kw) && !s.name.includes(kw) && !getBoardInfo(s).label.includes(kw)) return false;
-      if (hideST && s.name.includes('ST')) return false;
-      if (level && industryMap[`${s.code}.${s.exchange}`]?.[level as keyof IndustryInfo] !== name) return false;
-      return true;
-    });
-  }, [stocks, searchKeyword, hideST, industryFilter, industryMap, marketFilter]);
+    return filterStocks(stocks, valuations, industryMap, filters);
+  }, [stocks, valuations, industryMap, filters]);
 
   const marketGroups = useMemo(() => groupStocksByMarket(displayStocks), [displayStocks]);
-  const forceExpandGroups = searchKeyword.trim().length > 0 || industryFilter.length > 0;
+  const hasScreenerBounds = [
+    filters.peMin,
+    filters.peMax,
+    filters.pbMin,
+    filters.pbMax,
+    filters.roeMin,
+    filters.roeMax,
+    filters.marketCapMin,
+    filters.marketCapMax,
+  ].some((value) => value != null);
+  const forceExpandBoards = filters.keyword.trim().length > 0 || filters.industry.length > 0;
+  const forceExpandMarkets = forceExpandBoards || hasScreenerBounds;
+  const valuationCoverage = useMemo(
+    () => stocks.reduce((count, stock) => count + (valuations[stockKey(stock)] ? 1 : 0), 0),
+    [stocks, valuations]
+  );
 
   const toggleMarket = (key: string) => {
     setExpandedMarkets((previous) => {
@@ -120,6 +140,38 @@ export function Sidebar({
     return tree;
   }, [industryMap]);
 
+  const hkIndustries = useMemo(() => {
+    const industries = new Set<string>();
+    for (const valuation of Object.values(valuations)) {
+      if (valuation.exchange === 'HK' && valuation.industry) industries.add(valuation.industry);
+    }
+    return [...industries].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  }, [valuations]);
+
+  const updateFilters = (patch: Partial<StockFilters>) => {
+    setFilters((previous) => ({ ...previous, ...patch }));
+  };
+
+  const changeMarket = (market: StockMarketFilter) => {
+    updateFilters({ market, industry: '' });
+    if (market === 'HK') setExpandedMarkets(new Set(['HK']));
+    else if (market === 'CN') setExpandedMarkets(new Set(['SH', 'SZ', 'BJ']));
+    else setExpandedMarkets(new Set());
+  };
+
+  const resetValuationFilters = () => {
+    updateFilters({
+      peMin: null,
+      peMax: null,
+      pbMin: null,
+      pbMax: null,
+      roeMin: null,
+      roeMax: null,
+      marketCapMin: null,
+      marketCapMax: null,
+    });
+  };
+
   // 自选 tab 当前显示的列表：分组视图按分组 keys 顺序映射回 Stock（孤儿 key 剔除）
   const groupStocks = useMemo(() => {
     if (!activeGroup) return watchlist;
@@ -149,8 +201,8 @@ export function Sidebar({
           <input
             type="text"
             placeholder="搜索股票代码或名称..."
-            value={searchKeyword}
-            onChange={(e) => setSearchKeyword(e.target.value)}
+            value={filters.keyword}
+            onChange={(e) => updateFilters({ keyword: e.target.value })}
           />
           <button onClick={onRefresh} disabled={refreshing}>
             {refreshing ? '刷新中...' : '刷新列表'}
@@ -164,26 +216,58 @@ export function Sidebar({
           ] as const).map(([value, label]) => (
             <button
               key={value}
-              className={marketFilter === value ? 'active' : ''}
-              onClick={() => {
-                setMarketFilter(value);
-                if (value === 'HK') setIndustryFilter('');
-                if (value === 'HK') setExpandedMarkets(new Set(['HK']));
-                else if (value === 'CN') setExpandedMarkets(new Set(['SH', 'SZ', 'BJ']));
-                else setExpandedMarkets(new Set());
-              }}
+              className={filters.market === value ? 'active' : ''}
+              onClick={() => changeMarket(value)}
             >
               {label}
             </button>
           ))}
         </div>
         <div className="filter-bar">
-          <IndustrySelect tree={industryTree} value={industryFilter} onChange={setIndustryFilter} />
+          {filters.market === 'CN' ? (
+            <IndustrySelect
+              tree={industryTree}
+              value={filters.industry}
+              onChange={(industry) => updateFilters({ industry })}
+            />
+          ) : filters.market === 'HK' ? (
+            <select
+              value={filters.industry.startsWith('hk:') ? filters.industry.slice(3) : ''}
+              onChange={(event) =>
+                updateFilters({
+                  industry: event.target.value ? `hk:${event.target.value}` : '',
+                })
+              }
+              aria-label="港股行业筛选"
+            >
+              <option value="">全部港股行业</option>
+              {hkIndustries.map((industry) => (
+                <option key={industry} value={industry}>{industry}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="filter-hint">选择 A股 / 港股后可按行业筛选</span>
+          )}
           <label className="filter-check">
-            <input type="checkbox" checked={hideST} onChange={(e) => setHideST(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={filters.hideST}
+              onChange={(e) => updateFilters({ hideST: e.target.checked })}
+            />
             隐藏 ST
           </label>
         </div>
+        <ScreenerFilters
+          filters={filters}
+          onChange={updateFilters}
+          onReset={resetValuationFilters}
+          loading={valuationLoading}
+          error={valuationError}
+          coverage={valuationCoverage}
+          total={stocks.length}
+          updatedAt={valuationUpdatedAt}
+          onRefresh={onRefreshValuations}
+        />
       </div>
 
       <div className="tab-bar">
@@ -275,7 +359,7 @@ export function Sidebar({
             )}
             <div className="market-tree">
               {marketGroups.map((market) => {
-                const marketOpen = forceExpandGroups || expandedMarkets.has(market.key);
+                const marketOpen = forceExpandMarkets || expandedMarkets.has(market.key);
                 return (
                   <section key={market.key} className="market-group">
                     <button
@@ -289,7 +373,7 @@ export function Sidebar({
                     </button>
                     {marketOpen && market.boards.map((board) => {
                       const boardKey = `${market.key}:${board.key}`;
-                      const boardOpen = forceExpandGroups || expandedBoards.has(boardKey);
+                      const boardOpen = forceExpandBoards || expandedBoards.has(boardKey);
                       return (
                         <div key={board.key} className="board-group">
                           <button
@@ -304,6 +388,8 @@ export function Sidebar({
                           {boardOpen && board.stocks.map((stock) => {
                             const key = stockKey(stock);
                             const active = selectedStock?.code === stock.code && selectedStock?.exchange === stock.exchange;
+                            const valuation = valuations[key];
+                            const valuationLine = formatValuationLine(valuation);
                             return (
                               <div
                                 key={key}
@@ -316,6 +402,11 @@ export function Sidebar({
                                     <span className="stock-code">{stock.code}</span>
                                     <span className="stock-board">{board.label}</span>
                                   </div>
+                                  {valuationLine && (
+                                    <span className="stock-valuation" title={valuationTooltip(valuation)}>
+                                      {valuationLine}
+                                    </span>
+                                  )}
                                 </div>
                                 <span className={`stock-exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>{stock.exchange}</span>
                                 <StockGroupMenu
@@ -353,6 +444,8 @@ export function Sidebar({
             {groupStocks.map((stock) => {
               const key = stockKey(stock);
               const active = selectedStock?.code === stock.code && selectedStock?.exchange === stock.exchange;
+              const valuation = valuations[key];
+              const valuationLine = formatValuationLine(valuation);
               return (
                 <div
                   key={key}
@@ -370,6 +463,11 @@ export function Sidebar({
                       <span className="stock-code">{stock.code}</span>
                       <span className="stock-board">{getBoardInfo(stock).label}</span>
                     </div>
+                    {valuationLine && (
+                      <span className="stock-valuation" title={valuationTooltip(valuation)}>
+                        {valuationLine}
+                      </span>
+                    )}
                   </div>
                   <span className={`stock-exchange ${stock.exchange === 'HK' ? 'hk' : ''}`}>{stock.exchange}</span>
                   {activeGroup && (

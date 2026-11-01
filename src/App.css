@@ -379,6 +379,16 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.stock-valuation {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stock-exchange {
   font-size: 11px;
   color: var(--text-faint);
@@ -1485,6 +1495,203 @@ button:focus-visible {
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
+}
+
+.filter-hint {
+  flex: 1;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ===== 选股条件 ===== */
+.screener {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.screener-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.screener-toggle:hover,
+.screener-toggle.open {
+  background: var(--surface-hover);
+}
+
+.screener-summary {
+  flex: 1;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: right;
+}
+
+.screener-caret {
+  color: var(--primary-text);
+  font-size: 10px;
+}
+
+.screener-panel {
+  padding: 0 10px 9px;
+  border-top: 1px solid var(--border);
+}
+
+.screener-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  padding: 10px 0 8px;
+}
+
+.screener-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.screener-field.wide {
+  grid-column: 1 / -1;
+}
+
+.screener-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.screener-range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.screener-range input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 11px;
+}
+
+.screener-range input:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.screener-range input::placeholder {
+  color: var(--text-faint);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.screener-dash {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.screener-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.screener-preset {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.screener-preset:hover {
+  border-color: var(--primary);
+  color: var(--primary-text);
+  background: var(--surface-hover);
+}
+
+.screener-preset.active {
+  border-color: var(--primary);
+  color: var(--primary-text);
+  background: var(--primary-soft);
+}
+
+.screener-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--surface-divider);
+}
+
+.screener-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screener-status.has-error {
+  color: var(--warn);
+}
+
+.screener-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.screener-link {
+  padding: 2px 5px;
+  border: none;
+  background: transparent;
+  color: var(--primary-text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.screener-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.screener-link:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.screener-collapse {
+  color: var(--text-muted);
 }
 
 /* ===== 行业树形下拉 ===== */
