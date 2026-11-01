@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { NotesSyncApi } from '../hooks/useNotesSync';
 import type { S3SyncSettingsApi } from '../hooks/useS3SyncSettings';
+import type { SyncScope } from '../hooks/useSyncScopes';
 import type { WatchlistSyncApi } from '../hooks/useWatchlist';
 import type { ObjectSyncConfig, Stock, SyncState, WatchGroup } from '../types';
 import {
@@ -8,12 +9,7 @@ import {
   parseS3Endpoint,
   S3_PROVIDER_PRESETS,
 } from '../services/s3';
-import { replaceNotesSnapshot, toRemoteNotes } from '../services/notesStore';
-import {
-  createValueCompassBackup,
-  parseValueCompassBackup,
-  timestampForFilename,
-} from '../utils/watchlistBackup';
+import { LocalBackup } from './LocalBackup';
 
 interface Props {
   settings: S3SyncSettingsApi;
@@ -22,6 +18,7 @@ interface Props {
     'syncState' | 'syncError' | 'lastSyncedAt' | 'syncNow' | 'forcePush'
   >;
   notesSync: NotesSyncApi;
+  syncScopes: SyncScope[];
   watchlist: Stock[];
   groups: WatchGroup[];
   replaceAll: (stocks: Stock[], groups: WatchGroup[]) => void;
@@ -55,7 +52,7 @@ function formatTime(value: number | null): string {
 }
 
 interface CombinedSyncStatusProps {
-  config: ObjectSyncConfig;
+  scopes: SyncScope[];
   state: SyncState;
   lastSyncedAt: number | null;
   error: string | null;
@@ -64,7 +61,7 @@ interface CombinedSyncStatusProps {
 }
 
 function CombinedSyncStatus({
-  config,
+  scopes,
   state,
   lastSyncedAt,
   error,
@@ -72,21 +69,18 @@ function CombinedSyncStatus({
   onSync,
 }: CombinedSyncStatusProps) {
   return (
-    <div className="sync-object-row sync-object-row-combined">
+    <div className="sync-object-row">
       <div className="sync-object-copy">
         <div className="sync-object-title">
-          <strong>自选与笔记</strong>
+          <div className="sync-scope-list" aria-label="同步内容">
+            {scopes.map((scope) => (
+              <span className="sync-scope-item" key={scope.key}>
+                {scope.label}
+                <b>{scope.count}</b>
+              </span>
+            ))}
+          </div>
           <span>{STATE_LABEL[state]} · {formatTime(lastSyncedAt)}</span>
-        </div>
-        <div className="sync-key-list">
-          <span className="sync-key-item">
-            <b>自选</b>
-            <code title={config.watchlistKey}>{config.watchlistKey}</code>
-          </span>
-          <span className="sync-key-item">
-            <b>笔记</b>
-            <code title={config.notesKey}>{config.notesKey}</code>
-          </span>
         </div>
         {error && <p className="sync-hint sync-error-text">{error}</p>}
       </div>
@@ -103,6 +97,7 @@ export function SyncPanel({
   settings,
   watchlistSync,
   notesSync,
+  syncScopes,
   watchlist,
   groups,
   replaceAll,
@@ -115,10 +110,7 @@ export function SyncPanel({
   const [setupError, setSetupError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [backupNotice, setBackupNotice] = useState<string | null>(null);
-  const [backupError, setBackupError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const state = combinedState([watchlistSync.syncState, notesSync.syncState]);
   const lastSyncedAt = Math.max(watchlistSync.lastSyncedAt ?? 0, notesSync.lastSyncedAt ?? 0) || null;
   const syncError = [
@@ -135,8 +127,6 @@ export function SyncPanel({
     setEditing(!settings.config);
     setSetupError(null);
     setNotice(null);
-    setBackupError(null);
-    setBackupNotice(null);
 
     const close = (event: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
@@ -184,71 +174,14 @@ export function SyncPanel({
   const handleSyncAll = () =>
     run(async () => {
       await Promise.all([watchlistSync.syncNow(), notesSync.syncNow()]);
-      setNotice('自选和笔记同步已触发');
+      setNotice('同步已触发');
     });
 
   const handleForcePushWatchlist = () =>
     run(async () => {
       await watchlistSync.forcePush();
-      setNotice('自选与分组已强制上传；投资笔记仍按正常合并规则同步');
+      setNotice('已强制上传自选');
     });
-
-  const handleExport = () => {
-    try {
-      const timestamp = timestampForFilename();
-      const allNotes = toRemoteNotes();
-      const activeNoteCount = allNotes.filter((note) => note.deletedAt == null).length;
-      const content = createValueCompassBackup(watchlist, groups, allNotes);
-      const blob = new Blob([content], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      const filename = `valuecompass-backup-${timestamp}.json`;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      setBackupError(null);
-      setBackupNotice(
-        `已导出 ${filename}（${watchlist.length} 只自选、${groups.length} 个分组、${activeNoteCount} 条笔记）`
-      );
-    } catch (error) {
-      setBackupNotice(null);
-      setBackupError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      if (file.size > 5 * 1024 * 1024) throw new Error('JSON 文件不能超过 5 MB');
-      const imported = parseValueCompassBackup(await file.text());
-      const importedNoteCount = imported.notes.notes.filter((note) => note.deletedAt == null).length;
-      const currentNoteCount = toRemoteNotes().filter((note) => note.deletedAt == null).length;
-      const cloudHint = settings.config ? '导入后会同步到当前 OSS，笔记继续按合并规则处理。' : '';
-      const importTarget = imported.includesNotes ? '自选、分组和笔记' : '自选和分组';
-      if (
-        (watchlist.length > 0 || groups.length > 0 || currentNoteCount > 0) &&
-        !window.confirm(`导入会覆盖当前${importTarget}。${cloudHint}\n\n继续导入吗？`)
-      ) {
-        return;
-      }
-      replaceAll(imported.watchlist, imported.groups);
-      if (imported.includesNotes) replaceNotesSnapshot(imported.notes);
-      setBackupError(null);
-      setBackupNotice(
-        imported.includesNotes
-          ? `已导入 ${imported.watchlist.length} 只自选、${imported.groups.length} 个分组、${importedNoteCount} 条笔记`
-          : `已导入 ${imported.watchlist.length} 只自选、${imported.groups.length} 个分组；备份不含笔记，现有笔记未改动`
-      );
-    } catch (error) {
-      setBackupNotice(null);
-      setBackupError(error instanceof Error ? error.message : String(error));
-    }
-  };
 
   return (
     <div className="sync-wrap" ref={wrapRef}>
@@ -258,10 +191,7 @@ export function SyncPanel({
       {open && (
         <div className="sync-panel remote-sync-panel">
           <div className="sync-panel-heading">
-            <div>
-              <p className="sync-subtitle">远程同步</p>
-              <p className="sync-hint">自选与笔记共用 OSS 连接</p>
-            </div>
+            <p className="sync-subtitle">远程同步</p>
             {settings.config && !editing && (
               <button type="button" className="btn-small" onClick={() => setEditing(true)}>
                 编辑连接
@@ -271,15 +201,9 @@ export function SyncPanel({
 
           {settings.config && !editing ? (
             <>
-              <div className="sync-connection-summary">
-                <strong>{S3_PROVIDER_PRESETS[settings.config.provider].label}</strong>
-                <span>{settings.config.bucket} · {settings.config.region}</span>
-                <code title={settings.config.endpoint}>{shortEndpoint(settings.config.endpoint)}</code>
-              </div>
-
               <div className="sync-object-list">
                 <CombinedSyncStatus
-                  config={settings.config}
+                  scopes={syncScopes}
                   state={state}
                   lastSyncedAt={lastSyncedAt}
                   error={syncError}
@@ -294,7 +218,7 @@ export function SyncPanel({
                   className="btn-small btn-danger"
                   onClick={() => {
                     settings.disconnect();
-                    setNotice('已断开远程同步，本地数据仍保留');
+                    setNotice('已断开，本地数据保留');
                   }}
                 >
                   断开
@@ -302,7 +226,7 @@ export function SyncPanel({
               </div>
 
               <details className="sync-advanced">
-                <summary>高级同步操作</summary>
+                <summary>高级操作</summary>
                 <div className="sync-advanced-body">
                   <button
                     type="button"
@@ -312,7 +236,7 @@ export function SyncPanel({
                   >
                     强制上传自选
                   </button>
-                  <p className="sync-hint">仅覆盖远端自选文件；笔记继续按更新时间合并。</p>
+                  <p className="sync-hint">覆盖远端自选；笔记继续合并。</p>
                 </div>
               </details>
             </>
@@ -424,10 +348,10 @@ export function SyncPanel({
 
               <div className="sync-actions">
                 <button type="submit" className="btn-small btn-primary" disabled={busy}>
-                  {busy ? '处理中...' : settings.config ? '保存修改' : '测试连接并启用'}
+                  {busy ? '处理中...' : settings.config ? '保存' : '保存并启用'}
                 </button>
                 <button type="button" className="btn-small" onClick={handleTest} disabled={busy}>
-                  仅测试
+                  测试
                 </button>
                 {settings.config && (
                   <button
@@ -451,42 +375,21 @@ export function SyncPanel({
           {notice && <p className="sync-hint sync-success">{notice}</p>}
 
           <details className="sync-advanced">
-            <summary>安全与调试说明</summary>
+            <summary>安全说明</summary>
             <div className="sync-advanced-body">
               <p className="sync-hint">AK/SK 只保存在本机 localStorage，请使用仅授权该 Bucket 的子账号。</p>
               <p className="sync-hint">桌面端通过 Tauri HTTP 访问；浏览器调试需要 Bucket 配置 CORS。</p>
             </div>
           </details>
 
-          <details className="sync-backup-details">
-            <summary>本地完整备份</summary>
-            <div className="sync-actions">
-              <button type="button" className="btn-small" onClick={handleExport}>导出 JSON</button>
-              <button type="button" className="btn-small" onClick={() => fileInputRef.current?.click()}>
-                导入 JSON
-              </button>
-              <input
-                ref={fileInputRef}
-                className="sync-file-input"
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImport}
-              />
-            </div>
-            <p className="sync-hint">一个 JSON 同时包含自选、分组和全部投资笔记。</p>
-            {backupNotice && <p className="sync-hint sync-success">{backupNotice}</p>}
-            {backupError && <p className="sync-hint sync-error-text">{backupError}</p>}
-          </details>
+          <LocalBackup
+            watchlist={watchlist}
+            groups={groups}
+            replaceAll={replaceAll}
+            syncEnabled={Boolean(settings.config)}
+          />
         </div>
       )}
     </div>
   );
-}
-
-function shortEndpoint(endpoint: string): string {
-  try {
-    return new URL(endpoint).host;
-  } catch {
-    return endpoint;
-  }
 }

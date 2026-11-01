@@ -1,14 +1,26 @@
-// 验证自选备份 JSON、时间戳和导入兼容性
+// 验证统一备份归档、模块注册、导入兼容性与原子校验
 // 跑法: npm run check:backup
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const store = new Map();
+globalThis.localStorage = {
+  getItem: (key) => (store.has(key) ? store.get(key) : null),
+  setItem: (key, value) => store.set(key, String(value)),
+  removeItem: (key) => store.delete(key),
+};
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const {
-  createValueCompassBackup,
-  parseValueCompassBackup,
-  timestampForFilename,
-} = await import(join(root, 'src', 'utils', 'watchlistBackup.ts'));
+const { createAppBackup, restoreAppBackup } = await import(
+  join(root, 'src', 'services', 'appBackup.ts')
+);
+const { BACKUP_VERSION, createBackupArchive, parseBackupArchive, restoreBackupArchive } = await import(
+  join(root, 'src', 'services', 'backupArchive.ts')
+);
+const notes = await import(join(root, 'src', 'services', 'notesStore.ts'));
+const { timestampForFilename } = await import(
+  join(root, 'src', 'utils', 'watchlistBackup.ts')
+);
 
 const assert = (ok, message) => {
   console.log(`${ok ? 'PASS' : 'FAIL'}: ${message}`);
@@ -25,60 +37,125 @@ const stocks = [
 const groups = [
   { id: 'g1', name: '核心持仓', codes: ['00700', '600519'] },
 ];
-const backupNotes = [
-  {
-    id: 'n1',
-    stockKey: '600519.SH',
-    text: '长期跟踪',
-    createdAt: 100,
-    updatedAt: 200,
-    deletedAt: null,
+notes.replaceNotesSnapshot({
+  schemaVersion: 1,
+  updatedAt: 300,
+  notes: [
+    {
+      stockKey: '600519.SH',
+      id: 'n1',
+      text: '长期跟踪',
+      createdAt: 100,
+      updatedAt: 200,
+      deletedAt: null,
+    },
+    {
+      stockKey: '00700.HK',
+      id: 'n2',
+      text: '',
+      createdAt: 100,
+      updatedAt: 300,
+      deletedAt: 300,
+    },
+  ],
+});
+
+let restoredStocks = [];
+let restoredGroups = [];
+const context = {
+  watchlist: stocks,
+  groups,
+  replaceAll: (nextStocks, nextGroups) => {
+    restoredStocks = nextStocks;
+    restoredGroups = nextGroups;
   },
-  {
-    id: 'n2',
-    stockKey: '00700.HK',
-    text: '',
-    createdAt: 100,
-    updatedAt: 300,
-    deletedAt: 300,
-  },
-];
-const exported = createValueCompassBackup(stocks, groups, backupNotes);
-assert(JSON.parse(exported).version === 3, '导出格式版本为 3');
-assert(JSON.parse(exported).notes.length === 2, '单个 JSON 包含全部笔记');
-const roundTrip = parseValueCompassBackup(exported);
-assert(roundTrip.watchlist.length === 2, '导出后可完整导入自选');
-assert(roundTrip.groups[0].codes.length === 2, '导出后可完整导入分组');
-assert(roundTrip.includesNotes && roundTrip.notes.notes.length === 2, '导出后可完整导入笔记与墓碑');
-assert(
-  roundTrip.groups[0].codes.includes('00700.HK') && roundTrip.groups[0].codes.includes('600519.SH'),
-  '旧版纯 code 分组会迁移为 code.exchange'
-);
+};
+
+const exported = createAppBackup(context);
+const parsed = parseBackupArchive(exported);
+assert(parsed.version === BACKUP_VERSION, '统一备份使用当前归档版本');
+assert(parsed.format === 'valuecompass-backup', '使用统一备份格式');
+assert(Array.isArray(parsed.watchlist) && Array.isArray(parsed.groups), '归档包含自选模块');
+assert(Array.isArray(parsed.notes) && parsed.notes.length === 2, '归档自动包含笔记模块');
 assert(!exported.includes('token') && !exported.includes('gistId'), '导出不包含同步凭据');
 
-const legacyFormat = parseValueCompassBackup(JSON.stringify({
-  stocks: [{ code: '09988', name: '阿里巴巴', exchange: 'HK' }],
-  groups: [{ id: 'g2', name: '港股', codes: ['09988'] }],
-}));
-assert(legacyFormat.watchlist[0].code === '09988', '兼容旧同步文件 stocks 格式');
-assert(legacyFormat.groups[0].codes[0] === '09988.HK', '旧分组同样完成 key 迁移');
-assert(!legacyFormat.includesNotes && legacyFormat.notes.notes.length === 0, '旧备份不包含笔记时不会误覆盖');
+let futureValue = null;
+const futureArchive = createBackupArchive([
+  {
+    capture: () => ({ futureData: { enabled: true } }),
+    hasData: (data) => Object.prototype.hasOwnProperty.call(data, 'futureData'),
+    prepare: (data) => () => {
+      futureValue = data.futureData;
+    },
+  },
+]);
+restoreBackupArchive(futureArchive, [
+  {
+    capture: () => ({}),
+    hasData: (data) => Object.prototype.hasOwnProperty.call(data, 'futureData'),
+    prepare: (data) => () => {
+      futureValue = data.futureData;
+    },
+  },
+]);
+assert(futureValue?.enabled === true, '新增备份模块会被统一归档自动收纳');
 
+notes.replaceNotesSnapshot({ schemaVersion: 1, updatedAt: 0, notes: [] });
+restoreAppBackup(exported, context);
+assert(restoredStocks.length === 2, '导入可恢复自选');
+assert(restoredGroups[0].codes.length === 2, '导入可恢复分组');
+assert(
+  restoredGroups[0].codes.includes('00700.HK') && restoredGroups[0].codes.includes('600519.SH'),
+  '旧版纯 code 分组会迁移为 code.exchange'
+);
+assert(notes.activeNotesFor('600519.SH')[0]?.text === '长期跟踪', '导入可恢复笔记');
+assert(notes.getSnapshot().notesByStock['00700.HK'][0].deletedAt === 300, '笔记墓碑一并恢复');
+
+notes.replaceNotesSnapshot({
+  schemaVersion: 1,
+  updatedAt: 400,
+  notes: [
+    {
+      stockKey: '09988.HK',
+      id: 'keep',
+      text: '保留',
+      createdAt: 400,
+      updatedAt: 400,
+      deletedAt: null,
+    },
+  ],
+});
+restoreAppBackup(
+  JSON.stringify({
+    stocks: [{ code: '09988', name: '阿里巴巴', exchange: 'HK' }],
+    groups: [{ id: 'g2', name: '港股', codes: ['09988'] }],
+  }),
+  context
+);
+assert(restoredStocks[0].code === '09988', '兼容旧同步文件 stocks 格式');
+assert(restoredGroups[0].codes[0] === '09988.HK', '旧分组同样完成 key 迁移');
+assert(notes.activeNotesFor('09988.HK')[0]?.text === '保留', '旧备份不含笔记时不清空现有笔记');
+
+restoredStocks = [];
 let invalidNotesRejected = false;
 try {
-  parseValueCompassBackup(JSON.stringify({
-    watchlist: stocks,
-    groups,
-    notes: 'invalid',
-  }));
+  restoreAppBackup(
+    JSON.stringify({
+      watchlist: stocks,
+      groups,
+      notes: 'invalid',
+    }),
+    context
+  );
 } catch {
   invalidNotesRejected = true;
 }
-assert(invalidNotesRejected, '包含笔记字段但结构无效时拒绝导入');
+assert(invalidNotesRejected, '笔记结构无效时拒绝导入');
+assert(restoredStocks.length === 0, '校验失败时不发生部分数据写入');
 
 let invalidRejected = false;
 try {
-  parseValueCompassBackup('{bad json');
+  restoreAppBackup('{bad json', context);
 } catch {
   invalidRejected = true;
 }

@@ -1,27 +1,11 @@
 import type { Stock, WatchGroup } from '../types';
-import {
-  normalizeSnapshot,
-  type NotesSnapshot,
-  type RemoteStockNote,
-} from '../services/notesStore.ts';
 import { normalizeGroupCodes, stockKey } from './stockKey.ts';
 
 export type BackupGroup = WatchGroup;
 
-export interface ValueCompassBackup {
-  format: 'valuecompass-backup';
-  version: 3; // v3: 单个备份同时包含自选、分组和笔记
-  exportedAt: string;
+export interface WatchlistBackupData {
   watchlist: Stock[];
   groups: BackupGroup[];
-  notes: RemoteStockNote[];
-}
-
-export interface ParsedValueCompassBackup {
-  watchlist: Stock[];
-  groups: BackupGroup[];
-  notes: NotesSnapshot;
-  includesNotes: boolean;
 }
 
 function pad(value: number): string {
@@ -39,22 +23,6 @@ export function timestampForFilename(date = new Date()): string {
     pad(date.getMinutes()),
     pad(date.getSeconds()),
   ].join('');
-}
-
-export function createValueCompassBackup(
-  watchlist: Stock[],
-  groups: BackupGroup[],
-  notes: RemoteStockNote[]
-): string {
-  const backup: ValueCompassBackup = {
-    format: 'valuecompass-backup',
-    version: 3,
-    exportedAt: new Date().toISOString(),
-    watchlist,
-    groups,
-    notes,
-  };
-  return JSON.stringify(backup, null, 2);
 }
 
 function cleanStocks(value: unknown): Stock[] {
@@ -108,36 +76,7 @@ function cleanGroups(value: unknown): BackupGroup[] {
   });
 }
 
-export function parseValueCompassBackup(text: string): ParsedValueCompassBackup {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('文件不是有效的 JSON');
-  }
-  if (!parsed || typeof parsed !== 'object') throw new Error('JSON 结构无效');
-
-  const root = parsed as Record<string, unknown>;
-  const includesNotes = Object.prototype.hasOwnProperty.call(root, 'notes');
-  const rawNotes = root.notes;
-  const noteContainer =
-    rawNotes && typeof rawNotes === 'object' && !Array.isArray(rawNotes)
-      ? (rawNotes as Record<string, unknown>)
-      : null;
-  const noteList = Array.isArray(rawNotes)
-    ? rawNotes
-    : Array.isArray(noteContainer?.notes)
-      ? noteContainer.notes
-      : [];
-  if (includesNotes && !Array.isArray(rawNotes) && !Array.isArray(noteContainer?.notes)) {
-    throw new Error('备份中的笔记结构无效');
-  }
-  const exportedAt = typeof root.exportedAt === 'string' ? Date.parse(root.exportedAt) : NaN;
-  const notes = normalizeSnapshot({
-    schemaVersion: 1,
-    updatedAt: Number(noteContainer?.updatedAt) || (Number.isFinite(exportedAt) ? exportedAt : Date.now()),
-    notes: noteList,
-  });
+export function parseWatchlistBackupData(root: Record<string, unknown>): WatchlistBackupData {
   // 同时兼容本应用导出格式和旧同步文件中的 stocks 字段。
   const stockValue = root.watchlist ?? root.stocks;
   const watchlist = cleanStocks(stockValue);
@@ -145,7 +84,5 @@ export function parseValueCompassBackup(text: string): ParsedValueCompassBackup 
     watchlist,
     // 旧备份的分组 code 没有交易所后缀，按导入的自选列表补全
     groups: normalizeGroupCodes(cleanGroups(root.groups), watchlist),
-    notes,
-    includesNotes,
   };
 }

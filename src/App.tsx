@@ -7,6 +7,7 @@ import { useNotesSync } from './hooks/useNotesSync';
 import { useS3SyncSettings } from './hooks/useS3SyncSettings';
 import { useStockList } from './hooks/useStockList';
 import { useStockQuote } from './hooks/useStockQuote';
+import { useSyncScopes } from './hooks/useSyncScopes';
 import { useWatchlist } from './hooks/useWatchlist';
 import { stockKey } from './utils/stockKey';
 import './App.css';
@@ -43,6 +44,7 @@ function App() {
     forcePush,
   } = useWatchlist({ config: syncSettings.config });
   const notesSync = useNotesSync({ config: syncSettings.config });
+  const syncScopes = useSyncScopes(watchlist, groups);
   const { quote, loading: quoteLoading, error: quoteError } = useStockQuote(selectedStock);
 
   const watchlistKeys = useMemo(() => new Set(watchlist.map((stock) => stockKey(stock))), [watchlist]);
@@ -57,6 +59,7 @@ function App() {
             settings={syncSettings}
             watchlistSync={{ syncState, syncError, lastSyncedAt, syncNow, forcePush }}
             notesSync={notesSync}
+            syncScopes={syncScopes}
             watchlist={watchlist}
             groups={groups}
             replaceAll={replaceAll}
