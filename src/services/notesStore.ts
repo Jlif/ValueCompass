@@ -218,6 +218,12 @@ export function mergeRemoteNotes(snapshot: NotesSnapshot): {
   return { changed, snapshot: createSnapshot(nextByStock) };
 }
 
+export function replaceNotesSnapshot(snapshot: NotesSnapshot): void {
+  const normalized = normalizeSnapshot(snapshot);
+  const nextByStock = groupByStock(mergeNoteLists([], normalized.notes));
+  setState(persist(nextByStock));
+}
+
 export function hasAnyNotes(notesByStock: NotesByStock = state.notesByStock): boolean {
   return Object.values(notesByStock).some((notes) => notes.some((note) => note.deletedAt == null));
 }

@@ -8,9 +8,10 @@ import {
   parseS3Endpoint,
   S3_PROVIDER_PRESETS,
 } from '../services/s3';
+import { replaceNotesSnapshot, toRemoteNotes } from '../services/notesStore';
 import {
-  createWatchlistBackup,
-  parseWatchlistBackup,
+  createValueCompassBackup,
+  parseValueCompassBackup,
   timestampForFilename,
 } from '../utils/watchlistBackup';
 
@@ -53,46 +54,46 @@ function formatTime(value: number | null): string {
   });
 }
 
-interface ObjectStatusProps {
-  title: string;
-  objectKey: string;
+interface CombinedSyncStatusProps {
+  config: ObjectSyncConfig;
   state: SyncState;
   lastSyncedAt: number | null;
   error: string | null;
-  syncNow: () => Promise<void>;
-  forcePush?: () => Promise<void>;
-  enabled: boolean;
+  busy: boolean;
+  onSync: () => void;
 }
 
-function ObjectStatus({
-  title,
-  objectKey,
+function CombinedSyncStatus({
+  config,
   state,
   lastSyncedAt,
   error,
-  syncNow,
-  forcePush,
-  enabled,
-}: ObjectStatusProps) {
+  busy,
+  onSync,
+}: CombinedSyncStatusProps) {
   return (
-    <div className="sync-object-row">
+    <div className="sync-object-row sync-object-row-combined">
       <div className="sync-object-copy">
         <div className="sync-object-title">
-          <strong>{title}</strong>
+          <strong>自选与笔记</strong>
           <span>{STATE_LABEL[state]} · {formatTime(lastSyncedAt)}</span>
         </div>
-        <code>{objectKey}</code>
+        <div className="sync-key-list">
+          <span className="sync-key-item">
+            <b>自选</b>
+            <code title={config.watchlistKey}>{config.watchlistKey}</code>
+          </span>
+          <span className="sync-key-item">
+            <b>笔记</b>
+            <code title={config.notesKey}>{config.notesKey}</code>
+          </span>
+        </div>
         {error && <p className="sync-hint sync-error-text">{error}</p>}
       </div>
       <div className="sync-object-actions">
-        <button type="button" className="btn-small" disabled={!enabled} onClick={() => void syncNow()}>
+        <button type="button" className="btn-small" disabled={busy} onClick={onSync}>
           同步
         </button>
-        {forcePush && (
-          <button type="button" className="btn-small" disabled={!enabled} onClick={() => void forcePush()}>
-            强制上传
-          </button>
-        )}
       </div>
     </div>
   );
@@ -119,6 +120,11 @@ export function SyncPanel({
   const wrapRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const state = combinedState([watchlistSync.syncState, notesSync.syncState]);
+  const lastSyncedAt = Math.max(watchlistSync.lastSyncedAt ?? 0, notesSync.lastSyncedAt ?? 0) || null;
+  const syncError = [
+    watchlistSync.syncError ? `自选：${watchlistSync.syncError}` : '',
+    notesSync.syncError ? `笔记：${notesSync.syncError}` : '',
+  ].filter(Boolean).join('；') || null;
   const parsed = parseS3Endpoint(draft.endpoint);
   const needsRegion = !parsed.region;
   const needsBucket = !parsed.bucket;
@@ -181,22 +187,32 @@ export function SyncPanel({
       setNotice('自选和笔记同步已触发');
     });
 
+  const handleForcePushWatchlist = () =>
+    run(async () => {
+      await watchlistSync.forcePush();
+      setNotice('自选与分组已强制上传；投资笔记仍按正常合并规则同步');
+    });
+
   const handleExport = () => {
     try {
       const timestamp = timestampForFilename();
-      const content = createWatchlistBackup(watchlist, groups);
+      const allNotes = toRemoteNotes();
+      const activeNoteCount = allNotes.filter((note) => note.deletedAt == null).length;
+      const content = createValueCompassBackup(watchlist, groups, allNotes);
       const blob = new Blob([content], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      const filename = `${timestamp}.json`;
+      const filename = `valuecompass-backup-${timestamp}.json`;
       anchor.download = filename;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       setBackupError(null);
-      setBackupNotice(`已导出 ${filename}`);
+      setBackupNotice(
+        `已导出 ${filename}（${watchlist.length} 只自选、${groups.length} 个分组、${activeNoteCount} 条笔记）`
+      );
     } catch (error) {
       setBackupNotice(null);
       setBackupError(error instanceof Error ? error.message : String(error));
@@ -209,17 +225,25 @@ export function SyncPanel({
     if (!file) return;
     try {
       if (file.size > 5 * 1024 * 1024) throw new Error('JSON 文件不能超过 5 MB');
-      const imported = parseWatchlistBackup(await file.text());
-      const cloudHint = settings.config ? '导入后会自动同步到当前 OSS。' : '';
+      const imported = parseValueCompassBackup(await file.text());
+      const importedNoteCount = imported.notes.notes.filter((note) => note.deletedAt == null).length;
+      const currentNoteCount = toRemoteNotes().filter((note) => note.deletedAt == null).length;
+      const cloudHint = settings.config ? '导入后会同步到当前 OSS，笔记继续按合并规则处理。' : '';
+      const importTarget = imported.includesNotes ? '自选、分组和笔记' : '自选和分组';
       if (
-        (watchlist.length > 0 || groups.length > 0) &&
-        !window.confirm(`导入会覆盖当前自选和分组。${cloudHint}\n\n继续导入吗？`)
+        (watchlist.length > 0 || groups.length > 0 || currentNoteCount > 0) &&
+        !window.confirm(`导入会覆盖当前${importTarget}。${cloudHint}\n\n继续导入吗？`)
       ) {
         return;
       }
       replaceAll(imported.watchlist, imported.groups);
+      if (imported.includesNotes) replaceNotesSnapshot(imported.notes);
       setBackupError(null);
-      setBackupNotice(`已导入 ${imported.watchlist.length} 只自选、${imported.groups.length} 个分组`);
+      setBackupNotice(
+        imported.includesNotes
+          ? `已导入 ${imported.watchlist.length} 只自选、${imported.groups.length} 个分组、${importedNoteCount} 条笔记`
+          : `已导入 ${imported.watchlist.length} 只自选、${imported.groups.length} 个分组；备份不含笔记，现有笔记未改动`
+      );
     } catch (error) {
       setBackupNotice(null);
       setBackupError(error instanceof Error ? error.message : String(error));
@@ -254,31 +278,17 @@ export function SyncPanel({
               </div>
 
               <div className="sync-object-list">
-                <ObjectStatus
-                  title="自选与分组"
-                  objectKey={settings.config.watchlistKey}
-                  state={watchlistSync.syncState}
-                  lastSyncedAt={watchlistSync.lastSyncedAt}
-                  error={watchlistSync.syncError}
-                  syncNow={watchlistSync.syncNow}
-                  forcePush={watchlistSync.forcePush}
-                  enabled
-                />
-                <ObjectStatus
-                  title="投资笔记"
-                  objectKey={settings.config.notesKey}
-                  state={notesSync.syncState}
-                  lastSyncedAt={notesSync.lastSyncedAt}
-                  error={notesSync.syncError}
-                  syncNow={notesSync.syncNow}
-                  enabled
+                <CombinedSyncStatus
+                  config={settings.config}
+                  state={state}
+                  lastSyncedAt={lastSyncedAt}
+                  error={syncError}
+                  busy={busy}
+                  onSync={() => void handleSyncAll()}
                 />
               </div>
 
               <div className="sync-actions">
-                <button type="button" className="btn-small" onClick={handleSyncAll} disabled={busy}>
-                  全部同步
-                </button>
                 <button
                   type="button"
                   className="btn-small btn-danger"
@@ -290,6 +300,21 @@ export function SyncPanel({
                   断开
                 </button>
               </div>
+
+              <details className="sync-advanced">
+                <summary>高级同步操作</summary>
+                <div className="sync-advanced-body">
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={() => void handleForcePushWatchlist()}
+                    disabled={busy}
+                  >
+                    强制上传自选
+                  </button>
+                  <p className="sync-hint">仅覆盖远端自选文件；笔记继续按更新时间合并。</p>
+                </div>
+              </details>
             </>
           ) : (
             <form className="sync-config-form" onSubmit={handleSave}>
@@ -434,7 +459,7 @@ export function SyncPanel({
           </details>
 
           <details className="sync-backup-details">
-            <summary>本地自选备份</summary>
+            <summary>本地完整备份</summary>
             <div className="sync-actions">
               <button type="button" className="btn-small" onClick={handleExport}>导出 JSON</button>
               <button type="button" className="btn-small" onClick={() => fileInputRef.current?.click()}>
@@ -448,6 +473,7 @@ export function SyncPanel({
                 onChange={handleImport}
               />
             </div>
+            <p className="sync-hint">一个 JSON 同时包含自选、分组和全部投资笔记。</p>
             {backupNotice && <p className="sync-hint sync-success">{backupNotice}</p>}
             {backupError && <p className="sync-hint sync-error-text">{backupError}</p>}
           </details>

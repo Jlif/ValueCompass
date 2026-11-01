@@ -61,6 +61,20 @@ assert(result.changed, '远端有新笔记时标记 changed');
 assert(notes.getSnapshot().notesByStock['00700.HK']?.[0]?.text === '腾讯', '远端笔记写入本地缓存');
 assert(notes.hasAnyNotes(), '存在未删除笔记');
 
+// 5) 完整备份导入会替换本地笔记集
+notes.replaceNotesSnapshot({
+  schemaVersion: 1,
+  updatedAt: 500,
+  notes: [
+    { stockKey: '600519.SH', id: 'backup', text: '备份恢复', createdAt: 500, updatedAt: 500, deletedAt: null },
+  ],
+});
+assert(
+  notes.activeNotesFor('600519.SH')[0]?.text === '备份恢复',
+  '完整备份可恢复笔记'
+);
+assert(!notes.getSnapshot().notesByStock['00700.HK'], '完整备份恢复时替换旧笔记集');
+
 let invalidRejected = false;
 try {
   notes.parseSnapshot('{bad json');

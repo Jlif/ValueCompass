@@ -2072,6 +2072,10 @@ button:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.sync-object-row-combined {
+  align-items: flex-start;
+}
+
 .sync-object-copy {
   display: flex;
   flex: 1;
@@ -2113,6 +2117,31 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sync-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sync-key-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sync-key-item b {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.sync-key-item code {
+  min-width: 0;
 }
 
 .sync-object-actions {
