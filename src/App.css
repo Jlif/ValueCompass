@@ -379,6 +379,17 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.stock-delisted {
+  padding: 1px 5px;
+  border: 1px solid var(--danger-border);
+  border-radius: 3px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .stock-valuation {
   overflow: hidden;
   color: var(--text-faint);

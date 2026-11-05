@@ -10,7 +10,7 @@ const CACHE_KEY = 'vc_valuation_snapshot_v1';
 export const VALUATION_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 interface StoredSnapshot {
-  version: 1;
+  version: 2;
   byKey: Record<string, StockValuation>;
   markets: Partial<Record<ValuationMarket, number>>;
 }
@@ -20,7 +20,7 @@ function readStored(): StoredSnapshot | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredSnapshot;
-    if (parsed?.version !== 1 || !parsed.byKey || !parsed.markets) return null;
+    if (parsed?.version !== 2 || !parsed.byKey || !parsed.markets) return null;
     return parsed;
   } catch {
     return null;
@@ -74,7 +74,7 @@ export async function fetchValuationSnapshot(
   stocks: Stock[],
   options: { force?: boolean; signal?: AbortSignal } = {}
 ): Promise<ValuationSnapshot> {
-  const stored = readStored() ?? { version: 1 as const, byKey: {}, markets: {} };
+  const stored = readStored() ?? { version: 2 as const, byKey: {}, markets: {} };
   const now = Date.now();
   const staleMarkets = requiredMarkets(stocks).filter(
     (market) =>
@@ -97,7 +97,7 @@ export async function fetchValuationSnapshot(
   ]);
 
   const merged: StoredSnapshot = {
-    version: 1,
+    version: 2,
     byKey: { ...stored.byKey },
     markets: { ...stored.markets },
   };

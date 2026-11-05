@@ -1,4 +1,5 @@
 import type { KlineData, Stock, StockQuote } from '../types';
+import { isDelistedInstrument } from '../utils/stockStatus';
 
 // ponytail: API key 内置在客户端（本地个人应用），支持 localStorage 覆盖
 const DEFAULT_API_KEY = 'tk_6dd2c6a6411c4c35846952ff2f02cd8f';
@@ -78,20 +79,27 @@ interface ExchangeInstruments {
     code: string;
     name: string;
     type: string;
+    ext?: {
+      total_shares?: number;
+      float_shares?: number;
+    };
   }>;
 }
 
 function toStock(item: ExchangeInstruments['data'][number]): Stock {
+  const name = item.name.replace(/\s+/g, '');
+  const delisted = isDelistedInstrument(item);
   return {
     code: item.code,
     // 名称里的空格是数据源对齐填充的（如"万 科A"），清洗掉
-    name: item.name.replace(/\s+/g, ''),
+    name,
     exchange: item.exchange,
+    ...(delisted ? { delisted: true } : {}),
   };
 }
 
 // ponytail: 全量列表缓存在 localStorage，7 天过期；新上市标的可通过手动刷新立即补齐
-const STOCKS_CACHE_KEY = 'vc_stocks_cache_v3'; // v3: 新增港股
+const STOCKS_CACHE_KEY = 'vc_stocks_cache_v5'; // v5: 退市识别补充流通股本
 const STOCKS_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 export async function fetchStockList(): Promise<Stock[]> {

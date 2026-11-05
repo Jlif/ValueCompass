@@ -18,6 +18,7 @@ export interface StockFilters {
   marketCapMin: number | null;
   marketCapMax: number | null;
   hideST: boolean;
+  hideDelisted: boolean;
   keyword: string;
 }
 
@@ -33,6 +34,7 @@ export const DEFAULT_STOCK_FILTERS: StockFilters = {
   marketCapMin: null,
   marketCapMax: null,
   hideST: true,
+  hideDelisted: true,
   keyword: '',
 };
 
@@ -76,6 +78,7 @@ export function filterStocks(
     if (filters.market === 'CN' && stock.exchange === 'HK') return false;
     if (filters.market === 'HK' && stock.exchange !== 'HK') return false;
     if (filters.hideST && stock.name.includes('ST')) return false;
+    if (filters.hideDelisted && stock.delisted) return false;
     if (
       keyword &&
       !stock.code.includes(keyword) &&

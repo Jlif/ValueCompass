@@ -85,7 +85,7 @@ export function Sidebar({
   const [newGroupName, setNewGroupName] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
 
-  // 展示的股票列表：搜索、市场、行业、ST 与估值区间（全部在内存中过滤）
+  // 展示的股票列表：搜索、市场、行业、ST、退市与估值区间（全部在内存中过滤）
   const displayStocks = useMemo(() => {
     return filterStocks(stocks, valuations, industryMap, filters);
   }, [stocks, valuations, industryMap, filters]);
@@ -256,6 +256,14 @@ export function Sidebar({
             />
             隐藏 ST
           </label>
+          <label className="filter-check">
+            <input
+              type="checkbox"
+              checked={filters.hideDelisted}
+              onChange={(e) => updateFilters({ hideDelisted: e.target.checked })}
+            />
+            隐藏退市
+          </label>
         </div>
         <ScreenerFilters
           filters={filters}
@@ -401,6 +409,11 @@ export function Sidebar({
                                   <div className="stock-meta">
                                     <span className="stock-code">{stock.code}</span>
                                     <span className="stock-board">{board.label}</span>
+                                    {stock.delisted && (
+                                      <span className="stock-delisted" title="已退市标的，无实时行情和估值">
+                                        退市
+                                      </span>
+                                    )}
                                   </div>
                                   {valuationLine && (
                                     <span className="stock-valuation" title={valuationTooltip(valuation)}>
@@ -462,6 +475,11 @@ export function Sidebar({
                     <div className="stock-meta">
                       <span className="stock-code">{stock.code}</span>
                       <span className="stock-board">{getBoardInfo(stock).label}</span>
+                      {stock.delisted && (
+                        <span className="stock-delisted" title="已退市标的，无实时行情和估值">
+                          退市
+                        </span>
+                      )}
                     </div>
                     {valuationLine && (
                       <span className="stock-valuation" title={valuationTooltip(valuation)}>

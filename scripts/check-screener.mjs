@@ -8,6 +8,7 @@ import {
 } from '../src/services/valuation/normalize.ts';
 import { filterStocks, DEFAULT_STOCK_FILTERS } from '../src/services/stockScreener.ts';
 import { formatMarketCap, formatValuationLine } from '../src/utils/valuationFormat.ts';
+import { isDelistedInstrument } from '../src/utils/stockStatus.ts';
 
 const now = 1_700_000_000_000;
 const tencent = { code: '00700', name: '腾讯控股', exchange: 'HK' };
@@ -189,5 +190,39 @@ assert.deepEqual(
 
 assert.equal(formatMarketCap(3_487_938_556_404), '3.49万亿', '市值展示使用万亿单位');
 assert.equal(formatValuationLine(hkValuation), 'PB 2.67 · ROE 20.4%', '股票行展示 PB 与推算 ROE');
+
+assert.equal(
+  isDelistedInstrument({
+    exchange: 'SH',
+    name: '齐鲁石化',
+    ext: { total_shares: 1_950_000_000, float_shares: 0 },
+  }),
+  true,
+  '流通股本为 0 的历史退市股可识别'
+);
+assert.equal(
+  isDelistedInstrument({
+    exchange: 'SH',
+    name: '浦发银行',
+    ext: { total_shares: 33_305_838_300, float_shares: 33_305_838_300 },
+  }),
+  false,
+  '正常交易股票不会被误判退市'
+);
+
+const delisted = { code: '600001', name: '邯郸钢铁', exchange: 'SH', delisted: true };
+assert.equal(
+  filterStocks([delisted], {}, {}, { ...DEFAULT_STOCK_FILTERS }).length,
+  0,
+  '默认过滤退市股票'
+);
+assert.equal(
+  filterStocks([delisted], {}, {}, {
+    ...DEFAULT_STOCK_FILTERS,
+    hideDelisted: false,
+  }).length,
+  1,
+  '关闭隐藏退市后保留退市股票'
+);
 
 console.log('PASS: valuation normalization and stock screener');

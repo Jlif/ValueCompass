@@ -5,85 +5,103 @@ import { fetchTencentValuations } from './tencent';
 import type { RawValuationItem, ValuationMarketResult } from './types';
 
 const FIELDS = 'f12,f13,f14,f9,f23,f20,f21,f100,f114,f115';
-const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 20;
+const BATCH_SIZE = 100;
+const CONCURRENCY = 4;
+const UT = 'bd1d9ddb04089700cf9c27f6f7426281';
 
-interface ClistResponse {
+interface UlistResponse {
   data?: {
-    total?: number;
     diff?: RawValuationItem[];
   } | null;
 }
 
-function inferExchange(item: RawValuationItem): Stock['exchange'] | null {
-  const market = String(item.f13 ?? '');
-  const code = String(item.f12 ?? '');
-  if (/^[48]/.test(code) || /^92/.test(code)) return 'BJ';
-  if (market === '1') return 'SH';
-  if (market === '0') return 'SZ';
-  if (/^6/.test(code)) return 'SH';
-  if (/^[03]/.test(code)) return 'SZ';
-  return null;
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      try {
+        results[index] = { status: 'fulfilled', value: await task(items[index]) };
+      } catch (error) {
+        results[index] = { status: 'rejected', reason: error };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+function secid(stock: Stock): string {
+  return `${stock.exchange === 'SH' ? '1' : '0'}.${stock.code}`;
+}
+
+async function requestBatch(
+  batch: Stock[],
+  signal?: AbortSignal
+): Promise<RawValuationItem[]> {
+  const payload = await requestEastmoney<UlistResponse>(
+    '/api/qt/ulist.np/get',
+    {
+      secids: batch.map(secid).join(','),
+      ut: UT,
+      fltt: '2',
+      invt: '2',
+      fields: FIELDS,
+    },
+    signal
+  );
+  const items = payload.data?.diff;
+  if (!Array.isArray(items)) throw new Error('A 股估值响应格式异常');
+  return items;
 }
 
 async function fetchEastmoneyCnValuations(
   stocks: Stock[],
   signal?: AbortSignal
 ): Promise<ValuationMarketResult> {
-  const candidates = new Map<string, Stock[]>();
-  for (const stock of stocks) {
-    const list = candidates.get(stock.code) ?? [];
-    list.push(stock);
-    candidates.set(stock.code, list);
-  }
-
+  const byCode = new Map(stocks.map((stock) => [stock.code, stock]));
   const updatedAt = Date.now();
   const values = new Map<string, ReturnType<typeof normalizeCnValuation>>();
-  let total: number | null = null;
+  const results = await mapLimit(chunks(stocks, BATCH_SIZE), CONCURRENCY, (batch) =>
+    requestBatch(batch, signal)
+  );
+  let failedBatches = 0;
 
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const payload = await requestEastmoney<ClistResponse>(
-      '/api/qt/clist/get',
-      {
-        pn: String(page),
-        pz: String(PAGE_SIZE),
-        po: '1',
-        np: '1',
-        fltt: '2',
-        invt: '2',
-        fid: 'f3',
-        fs: MARKET_FILTER,
-        fields: FIELDS,
-      },
-      signal
-    );
-    const items = payload.data?.diff;
-    if (!Array.isArray(items) || items.length === 0) break;
-    if (total == null && Number.isFinite(Number(payload.data?.total))) {
-      total = Number(payload.data?.total);
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      if (result.reason instanceof DOMException && result.reason.name === 'AbortError') throw result.reason;
+      failedBatches += 1;
+      continue;
     }
-
-    for (const item of items) {
-      const code = String(item.f12 ?? '');
-      const exchange = inferExchange(item);
-      const matches = candidates.get(code) ?? [];
-      const stock =
-        matches.find((candidate) => candidate.exchange === exchange) ??
-        (matches.length === 1 ? matches[0] : undefined);
+    for (const item of result.value) {
+      const stock = byCode.get(String(item.f12 ?? ''));
       if (!stock) continue;
       const valuation = normalizeCnValuation(item, stock, updatedAt);
       values.set(valuation.key, valuation);
     }
-
-    if (total != null && page * PAGE_SIZE >= total) break;
-    if (total == null && items.length < PAGE_SIZE) break;
   }
 
   if (values.size === 0) {
     throw new Error('A 股估值快照为空');
   }
-  return { values: [...values.values()], warnings: [] };
+  return {
+    values: [...values.values()],
+    warnings: failedBatches > 0 ? [`A 股有 ${failedBatches} 个批次未更新`] : [],
+  };
 }
 
 export async function fetchCnValuations(

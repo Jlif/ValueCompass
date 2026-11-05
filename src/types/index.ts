@@ -3,6 +3,7 @@ export interface Stock {
   code: string;
   name: string;
   exchange: string;
+  delisted?: boolean;
 }
 
 // 股票笔记：按 stockKey（`code.exchange`）归属到单只股票
